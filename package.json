@@ -1,0 +1,26 @@
+{
+  "name": "voice-echo-agent",
+  "version": "1.0.0",
+  "description": "A voice agent that echoes what you say using OpenAI Realtime API",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "setup": "npm install && cp .env.example .env",
+    "validate": "node validate.js",
+    "test": "node --check server.js && echo 'Syntax check passed'"
+  },
+  "dependencies": {
+    "ws": "^8.18.0",
+    "express": "^4.19.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.24"
+  },
+  "keywords": ["voice", "ai", "openai", "realtime", "echo", "websocket"],
+  "author": "",
+  "license": "MIT"
+}
