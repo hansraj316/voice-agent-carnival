@@ -122,12 +122,71 @@
         .log-entry.info {
             color: #4ecdc4;
         }
+        
+        .connection-selector {
+            margin: 20px 0;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            backdrop-filter: blur(5px);
+        }
+        
+        .connection-selector label {
+            display: block;
+            margin-bottom: 10px;
+            font-weight: 600;
+            font-size: 1.1em;
+        }
+        
+        .connection-selector select {
+            width: 100%;
+            padding: 12px 15px;
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 10px;
+            color: white;
+            font-size: 1em;
+            cursor: pointer;
+            outline: none;
+        }
+        
+        .connection-selector select:focus {
+            border-color: rgba(255, 255, 255, 0.5);
+            background: rgba(255, 255, 255, 0.25);
+        }
+        
+        .connection-selector option {
+            background: #444;
+            color: white;
+            padding: 10px;
+        }
+        
+        .connection-info {
+            margin: 15px 0;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            font-size: 0.95em;
+            line-height: 1.4;
+            border-left: 4px solid rgba(255, 255, 255, 0.3);
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🎤 Voice Echo Agent</h1>
+        <h1>🎤 Multi-Modal Voice Echo Agent</h1>
         <div class="status" id="status">Disconnected</div>
+        
+        <div class="connection-selector">
+            <label for="connectionType">Connection Type:</label>
+            <select id="connectionType">
+                <option value="websocket">🔌 WebSocket (Server Proxy)</option>
+                <option value="webrtc">📡 WebRTC (Direct Browser)</option>
+                <option value="sip">📞 SIP (VoIP Integration)</option>
+            </select>
+        </div>
+        
+        <div class="connection-info" id="connectionInfo"></div>
         
         <div class="controls">
             <button id="connectBtn">Connect</button>
@@ -140,6 +199,6 @@
         </div>
     </div>
 
-    <script src="client.js"></script>
+    <script type="module" src="client.js"></script>
 </body>
 </html>

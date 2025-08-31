@@ -12,7 +12,7 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-class VoiceEchoServer {
+class MultiModalVoiceServer {
     constructor() {
         this.app = express();
         this.server = createServer(this.app);
@@ -23,25 +23,96 @@ class VoiceEchoServer {
         
         const port = process.env.PORT || 3000;
         this.server.listen(port, () => {
-            console.log(`🎤 Voice Echo Agent running on http://localhost:${port}`);
-            console.log(`📡 WebSocket server ready`);
+            console.log(`🎤 Multi-Modal Voice Echo Agent running on http://localhost:${port}`);
+            console.log(`📡 Supporting: WebSocket | WebRTC | SIP connections`);
+            console.log(`🌐 Open: http://localhost:${port}`);
         });
     }
     
     setupExpress() {
         this.app.use(cors());
+        this.app.use(express.json());
         this.app.use(express.static(path.join(__dirname, 'public')));
         
         this.app.get('/health', (req, res) => {
-            res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+            res.json({ 
+                status: 'healthy', 
+                timestamp: new Date().toISOString(),
+                api: 'OpenAI Realtime API (Direct)',
+                connections: ['WebSocket', 'WebRTC', 'SIP']
+            });
+        });
+
+        // Endpoint to generate ephemeral tokens for WebRTC
+        this.app.post('/api/ephemeral-token', async (req, res) => {
+            try {
+                if (!process.env.OPENAI_API_KEY) {
+                    return res.status(500).json({
+                        error: 'OpenAI API key not configured'
+                    });
+                }
+
+                // Generate ephemeral token for WebRTC connections
+                const response = await fetch('https://api.openai.com/v1/realtime/sessions', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        model: 'gpt-4o-realtime-preview-2024-12-17',
+                        voice: 'alloy'
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Failed to create session: ${response.statusText}`);
+                }
+
+                const session = await response.json();
+                
+                res.json({ 
+                    token: session.client_secret.value,
+                    expires_at: session.client_secret.expires_at,
+                    session_id: session.id
+                });
+            } catch (error) {
+                console.error('❌ Failed to generate ephemeral token:', error);
+                res.status(500).json({
+                    error: 'Failed to generate ephemeral token: ' + error.message
+                });
+            }
+        });
+
+        // SIP endpoint configuration
+        this.app.post('/api/sip-session', async (req, res) => {
+            try {
+                if (!process.env.OPENAI_API_KEY) {
+                    return res.status(500).json({
+                        error: 'OpenAI API key not configured'
+                    });
+                }
+
+                // Create SIP session (placeholder - would need SIP server setup)
+                res.json({
+                    message: 'SIP integration requires additional VoIP infrastructure',
+                    documentation: 'https://platform.openai.com/docs/guides/realtime-sip',
+                    note: 'Contact your VoIP provider for SIP integration setup'
+                });
+            } catch (error) {
+                console.error('❌ SIP session error:', error);
+                res.status(500).json({
+                    error: 'SIP session creation failed: ' + error.message
+                });
+            }
         });
     }
     
     setupWebSocket() {
         this.wss.on('connection', (clientWs, request) => {
-            console.log('🔌 Client connected from:', request.socket.remoteAddress);
+            console.log('🔌 WebSocket client connected from:', request.socket.remoteAddress);
             
-            const sessionHandler = new SessionHandler(clientWs);
+            const sessionHandler = new WebSocketSessionHandler(clientWs);
             
             clientWs.on('message', (message) => {
                 try {
@@ -57,19 +128,19 @@ class VoiceEchoServer {
             });
             
             clientWs.on('close', () => {
-                console.log('🔌 Client disconnected');
+                console.log('🔌 WebSocket client disconnected');
                 sessionHandler.cleanup();
             });
             
             clientWs.on('error', (error) => {
-                console.error('❌ Client WebSocket error:', error);
+                console.error('❌ WebSocket client error:', error);
                 sessionHandler.cleanup();
             });
         });
     }
 }
 
-class SessionHandler {
+class WebSocketSessionHandler {
     constructor(clientWs) {
         this.clientWs = clientWs;
         this.openaiWs = null;
@@ -89,9 +160,9 @@ class SessionHandler {
         }
         
         try {
-            console.log('🔗 Connecting to OpenAI Realtime API...');
+            console.log('🔗 Connecting to OpenAI Realtime API via WebSocket...');
             
-            const url = `wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01`;
+            const url = `wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17`;
             
             this.openaiWs = new WebSocket(url, {
                 headers: {
@@ -101,7 +172,7 @@ class SessionHandler {
             });
             
             this.openaiWs.on('open', () => {
-                console.log('✅ Connected to OpenAI Realtime API');
+                console.log('✅ Connected to OpenAI Realtime API via WebSocket');
                 this.isConnectedToOpenAI = true;
                 
                 // Configure the session for echo functionality
@@ -121,13 +192,16 @@ class SessionHandler {
                             threshold: 0.5,
                             prefix_padding_ms: 300,
                             silence_duration_ms: 500
-                        }
+                        },
+                        temperature: 0.1,
+                        max_response_output_tokens: 4096
                     }
                 });
                 
                 this.sendToClient({
-                    type: 'status',
-                    message: 'Connected to OpenAI - Ready to echo!'
+                    type: 'connected',
+                    connection_type: 'websocket',
+                    message: 'Connected via WebSocket - Ready to echo!'
                 });
             });
             
@@ -141,11 +215,11 @@ class SessionHandler {
             });
             
             this.openaiWs.on('close', (code, reason) => {
-                console.log(`🔌 OpenAI connection closed: ${code} ${reason}`);
+                console.log(`🔌 OpenAI WebSocket connection closed: ${code} ${reason}`);
                 this.isConnectedToOpenAI = false;
                 this.sendToClient({
-                    type: 'error',
-                    message: 'Lost connection to OpenAI'
+                    type: 'disconnected',
+                    message: 'Lost WebSocket connection to OpenAI'
                 });
             });
             
@@ -153,12 +227,12 @@ class SessionHandler {
                 console.error('❌ OpenAI WebSocket error:', error);
                 this.sendToClient({
                     type: 'error',
-                    message: 'OpenAI connection error: ' + error.message
+                    message: 'WebSocket connection error: ' + error.message
                 });
             });
             
         } catch (error) {
-            console.error('❌ Failed to connect to OpenAI:', error);
+            console.error('❌ Failed to connect to OpenAI via WebSocket:', error);
             this.sendToClient({
                 type: 'error',
                 message: 'Failed to connect to OpenAI: ' + error.message
@@ -181,10 +255,18 @@ class SessionHandler {
                 }
                 break;
                 
-            case 'stop_audio':
+            case 'commit_audio':
                 if (this.isConnectedToOpenAI) {
                     this.sendToOpenAI({
                         type: 'input_audio_buffer.commit'
+                    });
+                    
+                    this.sendToOpenAI({
+                        type: 'response.create',
+                        response: {
+                            modalities: ['audio'],
+                            instructions: 'Echo back exactly what the user just said.'
+                        }
                     });
                 }
                 break;
@@ -207,7 +289,7 @@ class SessionHandler {
             case 'input_audio_buffer.speech_started':
                 console.log('🎤 Speech detected');
                 this.sendToClient({
-                    type: 'status',
+                    type: 'speech_started',
                     message: 'Listening...'
                 });
                 break;
@@ -215,13 +297,17 @@ class SessionHandler {
             case 'input_audio_buffer.speech_stopped':
                 console.log('🛑 Speech ended');
                 this.sendToClient({
-                    type: 'status',
+                    type: 'speech_stopped',
                     message: 'Processing...'
                 });
                 break;
                 
             case 'conversation.item.input_audio_transcription.completed':
                 console.log('📝 Transcribed:', message.transcript);
+                this.sendToClient({
+                    type: 'transcript_input',
+                    transcript: message.transcript
+                });
                 break;
                 
             case 'response.audio.delta':
@@ -251,7 +337,7 @@ class SessionHandler {
             case 'response.done':
                 console.log('✅ Response complete');
                 this.sendToClient({
-                    type: 'status',
+                    type: 'response_complete',
                     message: 'Echo complete - Ready for next input'
                 });
                 break;
@@ -266,7 +352,9 @@ class SessionHandler {
                 
             default:
                 // Log other message types for debugging
-                console.log('📨 OpenAI message:', message.type);
+                if (process.env.DEBUG) {
+                    console.log('📨 OpenAI message:', message.type);
+                }
         }
     }
     
@@ -290,4 +378,4 @@ class SessionHandler {
 }
 
 // Start the server
-new VoiceEchoServer();
+new MultiModalVoiceServer();

@@ -1,28 +1,57 @@
-class VoiceEchoClient {
+class MultiModalVoiceClient {
     constructor() {
-        this.ws = null;
+        this.connectionType = 'websocket'; // Default
+        this.connection = null;
         this.audioContext = null;
-        this.mediaRecorder = null;
         this.stream = null;
         this.isConnected = false;
         this.isListening = false;
+        this.processor = null;
         
         this.initializeElements();
         this.setupEventListeners();
+        this.initializeConnectionHandlers();
     }
     
     initializeElements() {
         this.statusEl = document.getElementById('status');
+        this.connectionTypeSelect = document.getElementById('connectionType');
         this.connectBtn = document.getElementById('connectBtn');
         this.micBtn = document.getElementById('micBtn');
         this.disconnectBtn = document.getElementById('disconnectBtn');
         this.logEl = document.getElementById('log');
+        this.connectionInfo = document.getElementById('connectionInfo');
     }
     
     setupEventListeners() {
+        this.connectionTypeSelect.addEventListener('change', (e) => {
+            this.connectionType = e.target.value;
+            this.updateConnectionInfo();
+        });
         this.connectBtn.addEventListener('click', () => this.connect());
         this.micBtn.addEventListener('click', () => this.toggleListening());
         this.disconnectBtn.addEventListener('click', () => this.disconnect());
+        
+        // Initialize connection info
+        this.updateConnectionInfo();
+    }
+    
+    initializeConnectionHandlers() {
+        this.connectionHandlers = {
+            websocket: new WebSocketHandler(this),
+            webrtc: new WebRTCHandler(this),
+            sip: new SIPHandler(this)
+        };
+    }
+    
+    updateConnectionInfo() {
+        const info = {
+            websocket: 'Server-side proxy to OpenAI. Best for prototyping and server applications.',
+            webrtc: 'Direct browser connection to OpenAI. Best for production client apps with lowest latency.',
+            sip: 'VoIP telephony integration. Best for phone systems and call centers.'
+        };
+        
+        this.connectionInfo.textContent = info[this.connectionType];
     }
     
     log(message, type = 'info') {
@@ -40,45 +69,16 @@ class VoiceEchoClient {
     }
     
     async connect() {
-        try {
-            this.log('Connecting to server...');
-            this.ws = new WebSocket('ws://localhost:3000');
-            
-            this.ws.onopen = () => {
-                this.isConnected = true;
-                this.updateStatus('Connected', 'connected');
-                this.connectBtn.disabled = true;
-                this.micBtn.disabled = false;
-                this.disconnectBtn.disabled = false;
-                this.log('Connected successfully');
-            };
-            
-            this.ws.onmessage = (event) => {
-                this.handleServerMessage(event.data);
-            };
-            
-            this.ws.onclose = () => {
-                this.isConnected = false;
-                this.updateStatus('Disconnected');
-                this.connectBtn.disabled = false;
-                this.micBtn.disabled = true;
-                this.disconnectBtn.disabled = true;
-                this.log('Connection closed');
-                this.stopListening();
-            };
-            
-            this.ws.onerror = (error) => {
-                this.log(`WebSocket error: ${error.message}`, 'error');
-            };
-            
-        } catch (error) {
-            this.log(`Connection failed: ${error.message}`, 'error');
+        const handler = this.connectionHandlers[this.connectionType];
+        if (handler) {
+            await handler.connect();
         }
     }
     
     disconnect() {
-        if (this.ws) {
-            this.ws.close();
+        const handler = this.connectionHandlers[this.connectionType];
+        if (handler) {
+            handler.disconnect();
         }
         this.stopListening();
     }
@@ -93,6 +93,11 @@ class VoiceEchoClient {
     
     async startListening() {
         try {
+            if (!this.isConnected) {
+                this.log('Not connected', 'error');
+                return;
+            }
+            
             this.log('Requesting microphone access...');
             
             // Request microphone access
@@ -115,34 +120,30 @@ class VoiceEchoClient {
                 await this.audioContext.resume();
             }
             
-            // Create audio processing nodes
+            // Create audio processing pipeline
             const source = this.audioContext.createMediaStreamSource(this.stream);
-            const processor = this.audioContext.createScriptProcessor(4096, 1, 1);
+            this.processor = this.audioContext.createScriptProcessor(4096, 1, 1);
             
-            processor.onaudioprocess = (event) => {
-                if (this.isListening && this.ws && this.ws.readyState === WebSocket.OPEN) {
-                    const inputBuffer = event.inputBuffer;
-                    const channelData = inputBuffer.getChannelData(0);
-                    
-                    // Convert Float32Array to PCM16
+            this.processor.onaudioprocess = (event) => {
+                if (this.isListening) {
+                    const channelData = event.inputBuffer.getChannelData(0);
                     const pcm16 = this.floatTo16BitPCM(channelData);
                     
-                    // Send audio data to server
-                    this.ws.send(JSON.stringify({
-                        type: 'audio_input',
-                        data: Array.from(pcm16)
-                    }));
+                    const handler = this.connectionHandlers[this.connectionType];
+                    if (handler) {
+                        handler.sendAudio(Array.from(pcm16));
+                    }
                 }
             };
             
-            source.connect(processor);
-            processor.connect(this.audioContext.destination);
+            source.connect(this.processor);
+            this.processor.connect(this.audioContext.destination);
             
             this.isListening = true;
             this.updateStatus('Listening...', 'listening');
             this.micBtn.classList.add('listening');
             this.micBtn.textContent = '🔴';
-            this.log('Started listening');
+            this.log('Microphone active - speak to echo');
             
         } catch (error) {
             this.log(`Microphone access failed: ${error.message}`, 'error');
@@ -154,7 +155,12 @@ class VoiceEchoClient {
             this.stream.getTracks().forEach(track => track.stop());
         }
         
-        if (this.audioContext) {
+        if (this.processor) {
+            this.processor.disconnect();
+            this.processor = null;
+        }
+        
+        if (this.audioContext && this.audioContext.state !== 'closed') {
             this.audioContext.close();
         }
         
@@ -162,34 +168,12 @@ class VoiceEchoClient {
         this.updateStatus('Connected', 'connected');
         this.micBtn.classList.remove('listening');
         this.micBtn.textContent = '🎤';
-        this.log('Stopped listening');
-    }
-    
-    handleServerMessage(data) {
-        try {
-            const message = JSON.parse(data);
-            
-            switch (message.type) {
-                case 'audio_output':
-                    this.playAudio(message.data);
-                    break;
-                case 'status':
-                    this.log(`Server: ${message.message}`);
-                    break;
-                case 'error':
-                    this.log(`Server error: ${message.message}`, 'error');
-                    break;
-                default:
-                    this.log(`Unknown message type: ${message.type}`);
-            }
-        } catch (error) {
-            this.log(`Failed to parse server message: ${error.message}`, 'error');
-        }
+        this.log('Microphone stopped');
     }
     
     async playAudio(audioData) {
         try {
-            this.updateStatus('Playing audio...', 'speaking');
+            this.updateStatus('Playing echo...', 'speaking');
             
             // Convert array back to ArrayBuffer
             const arrayBuffer = new ArrayBuffer(audioData.length * 2);
@@ -249,7 +233,308 @@ class VoiceEchoClient {
     }
 }
 
+// WebSocket Connection Handler
+class WebSocketHandler {
+    constructor(client) {
+        this.client = client;
+        this.ws = null;
+    }
+    
+    async connect() {
+        try {
+            this.client.log('Connecting via WebSocket...');
+            this.ws = new WebSocket('ws://localhost:3000');
+            
+            this.ws.onopen = () => {
+                this.client.isConnected = true;
+                this.client.updateStatus('Connected via WebSocket', 'connected');
+                this.client.connectBtn.disabled = true;
+                this.client.micBtn.disabled = false;
+                this.client.disconnectBtn.disabled = false;
+                this.client.log('✅ WebSocket connection established');
+            };
+            
+            this.ws.onmessage = (event) => {
+                this.handleMessage(JSON.parse(event.data));
+            };
+            
+            this.ws.onclose = () => {
+                this.client.isConnected = false;
+                this.client.updateStatus('Disconnected');
+                this.client.connectBtn.disabled = false;
+                this.client.micBtn.disabled = true;
+                this.client.disconnectBtn.disabled = true;
+                this.client.log('WebSocket connection closed');
+            };
+            
+            this.ws.onerror = (error) => {
+                this.client.log(`WebSocket error: ${error.message}`, 'error');
+            };
+            
+        } catch (error) {
+            this.client.log(`WebSocket connection failed: ${error.message}`, 'error');
+        }
+    }
+    
+    disconnect() {
+        if (this.ws) {
+            this.ws.close();
+        }
+    }
+    
+    sendAudio(audioData) {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify({
+                type: 'audio_input',
+                data: audioData
+            }));
+        }
+    }
+    
+    handleMessage(message) {
+        switch (message.type) {
+            case 'audio_output':
+                this.client.playAudio(message.data);
+                break;
+            case 'transcript_input':
+                this.client.log(`You said: "${message.transcript}"`);
+                break;
+            case 'speech_started':
+                this.client.updateStatus('Listening...', 'listening');
+                break;
+            case 'speech_stopped':
+                this.client.updateStatus('Processing...', 'connected');
+                break;
+            case 'response_complete':
+                this.client.updateStatus('Connected via WebSocket', 'connected');
+                break;
+            case 'error':
+                this.client.log(`Error: ${message.message}`, 'error');
+                break;
+            default:
+                this.client.log(`Server: ${message.message || message.type}`);
+        }
+    }
+}
+
+// WebRTC Connection Handler
+class WebRTCHandler {
+    constructor(client) {
+        this.client = client;
+        this.peerConnection = null;
+        this.dataChannel = null;
+        this.audioTrack = null;
+    }
+    
+    async connect() {
+        try {
+            this.client.log('Getting ephemeral token for WebRTC...');
+            
+            // Get ephemeral token from server
+            const response = await fetch('/api/ephemeral-token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Failed to get ephemeral token: ${response.statusText}`);
+            }
+            
+            const { token } = await response.json();
+            
+            this.client.log('Setting up WebRTC connection...');
+            
+            // Create RTCPeerConnection
+            this.peerConnection = new RTCPeerConnection({
+                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+            });
+            
+            // Create data channel for events
+            this.dataChannel = this.peerConnection.createDataChannel('events', {
+                ordered: true
+            });
+            
+            this.dataChannel.onopen = () => {
+                this.client.log('✅ WebRTC data channel opened');
+                
+                // Configure session
+                this.sendEvent({
+                    type: 'session.update',
+                    session: {
+                        modalities: ['text', 'audio'],
+                        instructions: 'You are a voice echo agent. Repeat back exactly what the user says.',
+                        voice: 'alloy',
+                        input_audio_format: 'pcm16',
+                        output_audio_format: 'pcm16',
+                        turn_detection: {
+                            type: 'server_vad',
+                            threshold: 0.5,
+                            silence_duration_ms: 500
+                        },
+                        temperature: 0.1
+                    }
+                });
+            };
+            
+            this.dataChannel.onmessage = (event) => {
+                try {
+                    const message = JSON.parse(event.data);
+                    this.handleOpenAIMessage(message);
+                } catch (error) {
+                    this.client.log(`Failed to parse WebRTC message: ${error.message}`, 'error');
+                }
+            };
+            
+            // Handle incoming audio track
+            this.peerConnection.ontrack = (event) => {
+                this.client.log('📻 Received audio track from OpenAI');
+                const audio = new Audio();
+                audio.srcObject = event.streams[0];
+                audio.play().catch(e => this.client.log(`Audio play error: ${e.message}`, 'error'));
+            };
+            
+            // Get user media for audio input
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                audio: {
+                    sampleRate: 24000,
+                    channelCount: 1,
+                    echoCancellation: true,
+                    noiseSuppression: true
+                }
+            });
+            
+            // Add audio track to peer connection
+            this.audioTrack = stream.getAudioTracks()[0];
+            this.peerConnection.addTrack(this.audioTrack, stream);
+            
+            // Create offer
+            const offer = await this.peerConnection.createOffer();
+            await this.peerConnection.setLocalDescription(offer);
+            
+            // Send offer to OpenAI
+            const rtcResponse = await fetch('https://api.openai.com/v1/realtime/sessions', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    model: 'gpt-4o-realtime-preview-2024-12-17',
+                    voice: 'alloy',
+                    type: 'webrtc',
+                    offer: {
+                        sdp: offer.sdp,
+                        type: offer.type
+                    }
+                })
+            });
+            
+            if (!rtcResponse.ok) {
+                throw new Error(`WebRTC setup failed: ${rtcResponse.statusText}`);
+            }
+            
+            const session = await rtcResponse.json();
+            
+            // Set remote description
+            await this.peerConnection.setRemoteDescription(session.answer);
+            
+            this.client.isConnected = true;
+            this.client.updateStatus('Connected via WebRTC', 'connected');
+            this.client.connectBtn.disabled = true;
+            this.client.micBtn.disabled = false;
+            this.client.disconnectBtn.disabled = false;
+            this.client.log('✅ WebRTC connection established with OpenAI');
+            
+        } catch (error) {
+            this.client.log(`WebRTC connection failed: ${error.message}`, 'error');
+            console.error('WebRTC error:', error);
+        }
+    }
+    
+    disconnect() {
+        if (this.audioTrack) {
+            this.audioTrack.stop();
+        }
+        if (this.peerConnection) {
+            this.peerConnection.close();
+        }
+        this.client.isConnected = false;
+        this.client.updateStatus('Disconnected');
+        this.client.connectBtn.disabled = false;
+        this.client.micBtn.disabled = true;
+        this.client.disconnectBtn.disabled = false;
+    }
+    
+    sendAudio(audioData) {
+        // For WebRTC, audio is sent via the audio track automatically
+        // We don't need to manually send audio data
+    }
+    
+    sendEvent(event) {
+        if (this.dataChannel && this.dataChannel.readyState === 'open') {
+            this.dataChannel.send(JSON.stringify(event));
+        }
+    }
+    
+    handleOpenAIMessage(message) {
+        switch (message.type) {
+            case 'session.created':
+                this.client.log('📝 WebRTC session created');
+                break;
+            case 'conversation.item.input_audio_transcription.completed':
+                this.client.log(`You said: "${message.transcript}"`);
+                break;
+            case 'response.done':
+                this.client.log('✅ Echo response complete');
+                break;
+            case 'error':
+                this.client.log(`OpenAI error: ${message.error?.message}`, 'error');
+                break;
+        }
+    }
+}
+
+// SIP Connection Handler  
+class SIPHandler {
+    constructor(client) {
+        this.client = client;
+    }
+    
+    async connect() {
+        try {
+            this.client.log('Checking SIP configuration...');
+            
+            const response = await fetch('/api/sip-session', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            
+            const data = await response.json();
+            
+            this.client.log('ℹ️  ' + data.message, 'info');
+            this.client.log('📖 Documentation: ' + data.documentation, 'info');
+            this.client.log('💡 ' + data.note, 'info');
+            
+            // For demonstration, we'll show that SIP requires additional setup
+            this.client.updateStatus('SIP requires VoIP infrastructure', 'connected');
+            
+        } catch (error) {
+            this.client.log(`SIP setup error: ${error.message}`, 'error');
+        }
+    }
+    
+    disconnect() {
+        this.client.log('SIP disconnected');
+        this.client.isConnected = false;
+    }
+    
+    sendAudio(audioData) {
+        // SIP audio would be handled by VoIP infrastructure
+        this.client.log('SIP audio handling requires VoIP server setup');
+    }
+}
+
 // Initialize the client when the page loads
 document.addEventListener('DOMContentLoaded', () => {
-    new VoiceEchoClient();
+    new MultiModalVoiceClient();
 });

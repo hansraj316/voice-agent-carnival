@@ -1,23 +1,23 @@
-# 🎤 Voice Echo Agent
+# 🎤 Multi-Modal Voice Echo Agent
 
-A real-time voice agent that echoes what you say using OpenAI's latest GPT-Realtime API. Built with WebSockets, Web Audio API, and the cutting-edge GPT-4o Realtime model.
+A real-time voice agent that echoes what you say using OpenAI's Realtime API with support for all three connection types: WebSocket, WebRTC, and SIP. Built with the official OpenAI Realtime API and GPT-4o model.
 
 ## ✨ Features
 
-- **Real-time Voice Processing**: Uses OpenAI's GPT-Realtime API for ultra-low latency voice interactions
+- **Multi-Modal Connections**: Choose between WebSocket, WebRTC, or SIP connection types
 - **Echo Functionality**: Repeats back exactly what you say in natural, friendly voice
-- **Modern Web Technologies**: Built with Web Audio API, WebSockets, and ES6 modules
-- **Beautiful UI**: Responsive design with real-time status indicators and audio visualizations
-- **Voice Activity Detection**: Automatic speech detection and turn management
-- **High-Quality Audio**: 24kHz PCM16 audio processing for crystal clear voice
+- **Official Realtime API**: Built with OpenAI's direct Realtime API (platform.openai.com/docs/guides/realtime-websocket)
+- **Beautiful UI**: Responsive design with connection type selector and real-time status
+- **WebRTC Support**: Direct browser-to-OpenAI connection with lowest latency
+- **Production Ready**: Ephemeral tokens, proper error handling, and security best practices
 
 ## 🛠 Technologies Used
 
-- **Backend**: Node.js, Express, WebSockets (`ws`)
-- **Frontend**: Vanilla JavaScript, Web Audio API, WebSockets
-- **AI**: OpenAI GPT-4o Realtime API (gpt-4o-realtime-preview-2024-10-01)
-- **Documentation**: Context7 MCP server for up-to-date API docs
-- **Audio**: PCM16 format at 24kHz sample rate
+- **Backend**: Node.js, Express, Direct OpenAI Realtime API
+- **Frontend**: Vanilla JavaScript, ES6 Modules, WebRTC/WebSocket clients
+- **AI**: OpenAI GPT-4o Realtime API (gpt-4o-realtime-preview-2024-12-17)
+- **Connections**: WebSocket proxy, WebRTC direct, SIP integration support
+- **Audio**: PCM16 format at 24kHz with Web Audio API and native WebRTC
 
 ## 🚀 Quick Start
 
@@ -63,13 +63,34 @@ A real-time voice agent that echoes what you say using OpenAI's latest GPT-Realt
 4. Create a new API key
 5. Ensure you have access to the Realtime API (may require waitlist approval)
 
+## 🔗 Connection Types
+
+### 🔌 WebSocket (Default)
+- **Best for**: Server-side applications, prototyping, development
+- **How it works**: Browser connects to local server, server proxies to OpenAI
+- **Latency**: Good for most use cases
+- **Security**: API key stays on server
+
+### 📡 WebRTC (Recommended for Production)  
+- **Best for**: Production client applications, mobile apps
+- **How it works**: Direct peer-to-peer connection from browser to OpenAI
+- **Latency**: Lowest possible latency (~200-400ms)
+- **Security**: Uses ephemeral tokens, no API key exposure
+
+### 📞 SIP (Enterprise/Telephony)
+- **Best for**: Phone systems, call centers, VoIP integration
+- **How it works**: Integrates with existing telephony infrastructure
+- **Setup**: Requires VoIP provider and SIP server configuration
+- **Use case**: Voice agents accessible via phone calls
+
 ## 🎯 How to Use
 
-1. **Connect**: Click the "Connect" button to establish WebSocket connection
-2. **Start Listening**: Click the microphone button (🎤) to start voice input
-3. **Speak**: Talk into your microphone - the agent will listen
-4. **Hear Echo**: The agent will repeat back what you said in a natural voice
-5. **Continue**: Keep talking - the agent maintains context throughout the session
+1. **Choose Connection**: Select WebSocket, WebRTC, or SIP from the dropdown
+2. **Connect**: Click "Connect" to establish your chosen connection type
+3. **Start Listening**: Click the microphone button (🎤) to start voice input
+4. **Speak**: Talk into your microphone - the agent will listen
+5. **Hear Echo**: The agent will repeat back what you said in a natural voice
+6. **Continue**: Keep talking - the agent maintains context throughout the session
 
 ## 🏗 Architecture
 
