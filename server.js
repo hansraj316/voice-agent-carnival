@@ -61,15 +61,24 @@ class MultiModalVoiceServer {
                     },
                     body: JSON.stringify({
                         model: 'gpt-4o-realtime-preview-2024-12-17',
-                        voice: 'alloy'
+                        voice: 'alloy',
+                        turn_detection: {
+                            type: 'server_vad'
+                        }
                     })
                 });
 
                 if (!response.ok) {
-                    throw new Error(`Failed to create session: ${response.statusText}`);
+                    const errorText = await response.text();
+                    throw new Error(`Failed to create session (${response.status}): ${errorText}`);
                 }
 
                 const session = await response.json();
+                
+                // Check if response has the expected structure
+                if (!session.client_secret || !session.client_secret.value) {
+                    throw new Error('Invalid session response: missing client_secret');
+                }
                 
                 res.json({ 
                     token: session.client_secret.value,
@@ -193,7 +202,7 @@ class WebSocketSessionHandler {
                             prefix_padding_ms: 300,
                             silence_duration_ms: 500
                         },
-                        temperature: 0.1,
+                        temperature: 0.6,
                         max_response_output_tokens: 4096
                     }
                 });

@@ -349,8 +349,8 @@ class WebRTCHandler {
                 iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
             });
             
-            // Create data channel for events
-            this.dataChannel = this.peerConnection.createDataChannel('events', {
+            // Create data channel for events (must be named "oai-events" for OpenAI)
+            this.dataChannel = this.peerConnection.createDataChannel('oai-events', {
                 ordered: true
             });
             
@@ -371,7 +371,7 @@ class WebRTCHandler {
                             threshold: 0.5,
                             silence_duration_ms: 500
                         },
-                        temperature: 0.1
+                        temperature: 0.6
                     }
                 });
             };
@@ -412,31 +412,28 @@ class WebRTCHandler {
             await this.peerConnection.setLocalDescription(offer);
             
             // Send offer to OpenAI
-            const rtcResponse = await fetch('https://api.openai.com/v1/realtime/sessions', {
+            const rtcResponse = await fetch('https://api.openai.com/v1/realtime', {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json',
+                    'Content-Type': 'application/sdp',
                 },
-                body: JSON.stringify({
-                    model: 'gpt-4o-realtime-preview-2024-12-17',
-                    voice: 'alloy',
-                    type: 'webrtc',
-                    offer: {
-                        sdp: offer.sdp,
-                        type: offer.type
-                    }
-                })
+                body: offer.sdp
             });
             
             if (!rtcResponse.ok) {
-                throw new Error(`WebRTC setup failed: ${rtcResponse.statusText}`);
+                const errorText = await rtcResponse.text();
+                throw new Error(`WebRTC setup failed (${rtcResponse.status}): ${errorText}`);
             }
             
-            const session = await rtcResponse.json();
+            // The response should be SDP answer text
+            const answerSdp = await rtcResponse.text();
             
-            // Set remote description
-            await this.peerConnection.setRemoteDescription(session.answer);
+            // Set remote description with the SDP answer
+            await this.peerConnection.setRemoteDescription({
+                type: 'answer',
+                sdp: answerSdp
+            });
             
             this.client.isConnected = true;
             this.client.updateStatus('Connected via WebRTC', 'connected');

@@ -52,7 +52,7 @@ This is a multi-modal voice echo agent with direct OpenAI Realtime API WebSocket
 
 **Session Configuration**
 - Model: `gpt-4o-realtime-preview-2024-12-17`
-- Temperature: 0.1 (for consistent echoing)
+- Temperature: 0.6 (minimum required by OpenAI Realtime API)
 - Modalities: `['text', 'audio']`
 - Input transcription: Whisper-1 model
 - Max response tokens: 4096
