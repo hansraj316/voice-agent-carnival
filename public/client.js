@@ -243,7 +243,8 @@ class WebSocketHandler {
     async connect() {
         try {
             this.client.log('Connecting via WebSocket...');
-            this.ws = new WebSocket('ws://localhost:3000');
+            const wsUrl = `ws://${window.location.hostname}:${window.location.port}`;
+            this.ws = new WebSocket(wsUrl);
             
             this.ws.onopen = () => {
                 this.client.isConnected = true;
