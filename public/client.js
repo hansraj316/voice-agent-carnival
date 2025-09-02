@@ -324,30 +324,120 @@ class WebRTCHandler {
         this.peerConnection = null;
         this.dataChannel = null;
         this.audioTrack = null;
+        this.retryCount = 0;
+        this.maxRetries = 3;
+        this.baseDelay = 1000; // 1 second
     }
     
     async connect() {
+        return this.connectWithRetry();
+    }
+    
+    async connectWithRetry() {
         try {
-            this.client.log('Getting ephemeral token for WebRTC...');
-            
-            // Get ephemeral token from server
+            await this.attemptConnection();
+        } catch (error) {
+            if (this.retryCount < this.maxRetries && this.shouldRetry(error)) {
+                this.retryCount++;
+                const delay = this.getRetryDelay();
+                this.client.log(`Connection failed, retrying in ${delay/1000}s (attempt ${this.retryCount}/${this.maxRetries})...`, 'warning');
+                this.client.updateStatus(`Retrying connection (${this.retryCount}/${this.maxRetries})...`, 'warning');
+                
+                setTimeout(() => {
+                    this.connectWithRetry();
+                }, delay);
+            } else {
+                this.handleConnectionFailure(error);
+            }
+        }
+    }
+    
+    async attemptConnection() {
+        this.client.updateStatus('Validating API configuration...', 'connecting');
+        this.client.log('🔑 Validating API configuration...');
+        
+        // First, validate API key and get ephemeral token
+        const tokenResponse = await this.getEphemeralToken();
+        const { token } = tokenResponse;
+        
+        this.client.updateStatus('Requesting microphone access...', 'connecting');
+        this.client.log('🎤 Requesting microphone access...');
+        
+        // Get user media early to catch permission issues
+        const stream = await this.getUserMedia();
+        
+        this.client.updateStatus('Setting up WebRTC connection...', 'connecting');
+        this.client.log('🔗 Setting up WebRTC peer connection...');
+        
+        // Setup WebRTC connection
+        await this.setupWebRTCConnection(stream, token);
+    }
+    
+    async getEphemeralToken() {
+        try {
             const response = await fetch('/api/ephemeral-token', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
             });
             
             if (!response.ok) {
-                throw new Error(`Failed to get ephemeral token: ${response.statusText}`);
+                const errorData = await response.json().catch(() => ({ error: response.statusText }));
+                
+                if (response.status === 500 && errorData.error?.includes('API key not configured')) {
+                    throw new APIKeyError('OpenAI API key is not configured. Please add OPENAI_API_KEY to your .env file.');
+                } else if (response.status === 401) {
+                    throw new APIKeyError('Invalid OpenAI API key. Please check your OPENAI_API_KEY in .env file.');
+                } else if (response.status === 429) {
+                    throw new RateLimitError('OpenAI API rate limit exceeded. Please try again later.');
+                } else {
+                    throw new NetworkError(`Server error (${response.status}): ${errorData.error || response.statusText}`);
+                }
             }
             
-            const { token } = await response.json();
-            
-            this.client.log('Setting up WebRTC connection...');
-            
+            return await response.json();
+        } catch (error) {
+            if (error instanceof APIKeyError || error instanceof RateLimitError || error instanceof NetworkError) {
+                throw error;
+            }
+            throw new NetworkError(`Failed to connect to server: ${error.message}`);
+        }
+    }
+    
+    async getUserMedia() {
+        try {
+            return await navigator.mediaDevices.getUserMedia({ 
+                audio: {
+                    sampleRate: 24000,
+                    channelCount: 1,
+                    echoCancellation: true,
+                    noiseSuppression: true
+                }
+            });
+        } catch (error) {
+            if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+                throw new PermissionError('Microphone access denied. Please allow microphone access and try again.');
+            } else if (error.name === 'NotFoundError') {
+                throw new PermissionError('No microphone found. Please connect a microphone and try again.');
+            } else {
+                throw new PermissionError(`Microphone access failed: ${error.message}`);
+            }
+        }
+    }
+    
+    async setupWebRTCConnection(stream, token) {
+        try {
             // Create RTCPeerConnection
             this.peerConnection = new RTCPeerConnection({
                 iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
             });
+            
+            // Add ICE connection state monitoring
+            this.peerConnection.oniceconnectionstatechange = () => {
+                this.client.log(`ICE connection state: ${this.peerConnection.iceConnectionState}`);
+                if (this.peerConnection.iceConnectionState === 'failed') {
+                    throw new WebRTCError('WebRTC ICE connection failed. This may be due to network/firewall restrictions.');
+                }
+            };
             
             // Create data channel for events (must be named "oai-events" for OpenAI)
             this.dataChannel = this.peerConnection.createDataChannel('oai-events', {
@@ -393,38 +483,20 @@ class WebRTCHandler {
                 audio.play().catch(e => this.client.log(`Audio play error: ${e.message}`, 'error'));
             };
             
-            // Get user media for audio input
-            const stream = await navigator.mediaDevices.getUserMedia({ 
-                audio: {
-                    sampleRate: 24000,
-                    channelCount: 1,
-                    echoCancellation: true,
-                    noiseSuppression: true
-                }
-            });
-            
             // Add audio track to peer connection
             this.audioTrack = stream.getAudioTracks()[0];
             this.peerConnection.addTrack(this.audioTrack, stream);
+            
+            this.client.updateStatus('Creating WebRTC offer...', 'connecting');
             
             // Create offer
             const offer = await this.peerConnection.createOffer();
             await this.peerConnection.setLocalDescription(offer);
             
-            // Send offer to OpenAI
-            const rtcResponse = await fetch('https://api.openai.com/v1/realtime', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/sdp',
-                },
-                body: offer.sdp
-            });
+            this.client.updateStatus('Connecting to OpenAI WebRTC...', 'connecting');
             
-            if (!rtcResponse.ok) {
-                const errorText = await rtcResponse.text();
-                throw new Error(`WebRTC setup failed (${rtcResponse.status}): ${errorText}`);
-            }
+            // Send offer to OpenAI
+            const rtcResponse = await this.sendOfferToOpenAI(offer, token);
             
             // The response should be SDP answer text
             const answerSdp = await rtcResponse.text();
@@ -441,11 +513,97 @@ class WebRTCHandler {
             this.client.micBtn.disabled = false;
             this.client.disconnectBtn.disabled = false;
             this.client.log('✅ WebRTC connection established with OpenAI');
+            this.retryCount = 0; // Reset retry count on success
             
         } catch (error) {
-            this.client.log(`WebRTC connection failed: ${error.message}`, 'error');
-            console.error('WebRTC error:', error);
+            throw error; // Re-throw to be handled by retry logic
         }
+    }
+    
+    async sendOfferToOpenAI(offer, token) {
+        try {
+            const response = await fetch('https://api.openai.com/v1/realtime', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/sdp',
+                },
+                body: offer.sdp
+            });
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                if (response.status === 401) {
+                    throw new APIKeyError('Invalid OpenAI API token for WebRTC connection.');
+                } else if (response.status === 429) {
+                    throw new RateLimitError('OpenAI WebRTC rate limit exceeded.');
+                } else if (response.status >= 500) {
+                    throw new OpenAIServiceError(`OpenAI service error (${response.status}): ${errorText}`);
+                } else {
+                    throw new WebRTCError(`WebRTC setup failed (${response.status}): ${errorText}`);
+                }
+            }
+            
+            return response;
+        } catch (error) {
+            if (error instanceof APIKeyError || error instanceof RateLimitError || error instanceof OpenAIServiceError || error instanceof WebRTCError) {
+                throw error;
+            }
+            throw new NetworkError(`Failed to establish WebRTC connection: ${error.message}`);
+        }
+    }
+    
+    shouldRetry(error) {
+        // Don't retry for permanent errors
+        return !(error instanceof APIKeyError || error instanceof PermissionError);
+    }
+    
+    getRetryDelay() {
+        // Exponential backoff: 1s, 2s, 4s
+        return this.baseDelay * Math.pow(2, this.retryCount - 1);
+    }
+    
+    handleConnectionFailure(error) {
+        this.client.isConnected = false;
+        this.client.updateStatus('Connection failed', 'error');
+        this.client.connectBtn.disabled = false;
+        this.client.micBtn.disabled = true;
+        this.client.disconnectBtn.disabled = true;
+        
+        let userMessage = 'WebRTC connection failed';
+        let guidance = '';
+        
+        if (error instanceof APIKeyError) {
+            userMessage = '❌ API Key Error';
+            guidance = error.message + ' Check your server configuration and restart.';
+        } else if (error instanceof PermissionError) {
+            userMessage = '❌ Permission Error';
+            guidance = error.message;
+        } else if (error instanceof RateLimitError) {
+            userMessage = '❌ Rate Limited';
+            guidance = error.message + ' Wait a few minutes before trying again.';
+        } else if (error instanceof WebRTCError) {
+            userMessage = '❌ WebRTC Setup Error';
+            guidance = error.message + ' Check your network connection and firewall settings.';
+        } else if (error instanceof OpenAIServiceError) {
+            userMessage = '❌ OpenAI Service Error';
+            guidance = error.message + ' The issue is on OpenAI\'s side. Try again later.';
+        } else if (error instanceof NetworkError) {
+            userMessage = '❌ Network Error';
+            guidance = error.message + ' Check your internet connection.';
+        } else {
+            userMessage = '❌ Connection Error';
+            guidance = error.message;
+        }
+        
+        this.client.log(`${userMessage}: ${guidance}`, 'error');
+        
+        console.error('WebRTC connection error details:', {
+            type: error.constructor.name,
+            message: error.message,
+            retryCount: this.retryCount,
+            stack: error.stack
+        });
     }
     
     disconnect() {
@@ -528,6 +686,49 @@ class SIPHandler {
     sendAudio(audioData) {
         // SIP audio would be handled by VoIP infrastructure
         this.client.log('SIP audio handling requires VoIP server setup');
+    }
+}
+
+// Custom Error Classes for Better Error Handling
+class APIKeyError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = 'APIKeyError';
+    }
+}
+
+class PermissionError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = 'PermissionError';
+    }
+}
+
+class NetworkError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = 'NetworkError';
+    }
+}
+
+class WebRTCError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = 'WebRTCError';
+    }
+}
+
+class RateLimitError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = 'RateLimitError';
+    }
+}
+
+class OpenAIServiceError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = 'OpenAIServiceError';
     }
 }
 

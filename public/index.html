@@ -52,6 +52,19 @@
             background: rgba(255, 152, 0, 0.3);
         }
         
+        .status.connecting {
+            background: rgba(156, 39, 176, 0.3);
+            animation: pulse 2s infinite;
+        }
+        
+        .status.warning {
+            background: rgba(255, 193, 7, 0.3);
+        }
+        
+        .status.error {
+            background: rgba(244, 67, 54, 0.3);
+        }
+        
         @keyframes pulse {
             0% { transform: scale(1); }
             50% { transform: scale(1.05); }
@@ -121,6 +134,10 @@
         
         .log-entry.info {
             color: #4ecdc4;
+        }
+        
+        .log-entry.warning {
+            color: #ffc107;
         }
         
         .connection-selector {
