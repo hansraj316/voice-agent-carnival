@@ -19,6 +19,11 @@ class MultiModalVoiceServer {
         this.server = createServer(this.app);
         this.wss = new WebSocketServer({ server: this.server });
         
+        // Rate limiting for ElevenLabs API
+        this.elevenLabsQuotaExceeded = false;
+        this.quotaExceededLogTime = null;
+        this.elevenLabsRetryAfter = null;
+        
         this.setupExpress();
         this.setupWebSocket();
         
@@ -160,6 +165,17 @@ class MultiModalVoiceServer {
                     });
                 }
 
+                // Check if we're currently blocked due to quota exceeded
+                if (this.isElevenLabsBlocked()) {
+                    const remainingTime = Math.ceil((this.elevenLabsRetryAfter - Date.now()) / 1000);
+                    return res.status(429).json({
+                        error: 'quota_exceeded',
+                        message: 'ElevenLabs quota exceeded. Please upgrade your plan or try again later.',
+                        details: `Rate limited for ${remainingTime} more seconds`,
+                        retryAfter: remainingTime
+                    });
+                }
+
                 const { text, voiceId, modelId = 'eleven_multilingual_v2' } = req.body;
 
                 if (!text || !voiceId) {
@@ -193,12 +209,85 @@ class MultiModalVoiceServer {
                 res.setHeader('Content-Type', 'audio/mpeg');
                 res.send(audioBuffer);
             } catch (error) {
-                console.error('❌ ElevenLabs TTS error:', error);
+                // Analyze the error and determine response
+                const errorInfo = this.getElevenLabsErrorInfo(error);
+                
+                if (errorInfo.shouldBlock) {
+                    // Set quota block to prevent spamming
+                    this.setElevenLabsQuotaExceeded();
+                    
+                    return res.status(errorInfo.isQuotaError ? 429 : 429).json({
+                        error: errorInfo.isQuotaError ? 'quota_exceeded' : 'rate_limited',
+                        message: errorInfo.userMessage,
+                        details: errorInfo.isQuotaError ? 
+                            'Your ElevenLabs API quota has been exceeded. Upgrade your plan or wait for quota reset.' :
+                            'Rate limited by ElevenLabs API. Try again later.'
+                    });
+                }
+                
+                // For non-quota errors, log once and return generic error
+                console.error('❌ ElevenLabs TTS error:', error.message || error);
                 res.status(500).json({
-                    error: 'Failed to generate speech: ' + error.message
+                    error: 'tts_failed',
+                    message: 'Failed to generate speech. Please try again later.'
                 });
             }
         });
+    }
+    
+    // Helper methods for ElevenLabs quota management
+    isElevenLabsBlocked() {
+        if (!this.elevenLabsQuotaExceeded) return false;
+        
+        // If we have a retry-after time, check if it has passed
+        if (this.elevenLabsRetryAfter && Date.now() < this.elevenLabsRetryAfter) {
+            return true;
+        }
+        
+        // Reset block after retry time passes
+        if (this.elevenLabsRetryAfter && Date.now() >= this.elevenLabsRetryAfter) {
+            this.resetElevenLabsQuota();
+        }
+        
+        return false;
+    }
+    
+    setElevenLabsQuotaExceeded(retryAfterSeconds = 300) {
+        this.elevenLabsQuotaExceeded = true;
+        this.elevenLabsRetryAfter = Date.now() + (retryAfterSeconds * 1000);
+        
+        // Only log once when quota is first exceeded
+        if (!this.quotaExceededLogTime || Date.now() - this.quotaExceededLogTime > 300000) { // 5 minutes
+            console.error('⚠️  ElevenLabs quota exceeded - blocking further requests for', retryAfterSeconds, 'seconds');
+            this.quotaExceededLogTime = Date.now();
+        }
+    }
+    
+    resetElevenLabsQuota() {
+        this.elevenLabsQuotaExceeded = false;
+        this.elevenLabsRetryAfter = null;
+        console.log('✅ ElevenLabs quota reset - requests enabled');
+    }
+    
+    getElevenLabsErrorInfo(error) {
+        let isQuotaError = false;
+        let userMessage = 'Failed to generate speech';
+        let shouldBlock = false;
+        
+        // Check if it's an ElevenLabs error object
+        if (error.name === 'ElevenLabsError' || (error.message && error.message.includes('ElevenLabsError'))) {
+            // Parse the error for quota information
+            if (error.message.includes('quota_exceeded') || error.message.includes('Status code: 401')) {
+                isQuotaError = true;
+                shouldBlock = true;
+                userMessage = 'ElevenLabs quota exceeded. Please upgrade your plan or try again later.';
+            } else if (error.message.includes('Status code: 429')) {
+                shouldBlock = true;
+                userMessage = 'ElevenLabs rate limit exceeded. Please try again later.';
+            }
+        }
+        
+        return { isQuotaError, userMessage, shouldBlock };
     }
     
     setupWebSocket() {

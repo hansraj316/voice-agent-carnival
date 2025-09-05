@@ -135,7 +135,21 @@ class MultiModalVoiceClient {
             });
             
             if (!response.ok) {
-                throw new Error(`TTS failed: ${response.statusText}`);
+                // Parse error response for better user feedback
+                let errorMessage = `TTS failed: ${response.statusText}`;
+                try {
+                    const errorData = await response.json();
+                    if (errorData.error === 'quota_exceeded') {
+                        errorMessage = errorData.message || 'ElevenLabs quota exceeded. Please upgrade your plan or try again later.';
+                        // Show more prominent error for quota issues
+                        this.showQuotaError(errorData);
+                    } else if (errorData.message) {
+                        errorMessage = errorData.message;
+                    }
+                } catch (e) {
+                    // Fallback to status text if JSON parsing fails
+                }
+                throw new Error(errorMessage);
             }
             
             const audioBlob = await response.blob();
@@ -159,6 +173,32 @@ class MultiModalVoiceClient {
         } catch (error) {
             this.log(`ElevenLabs TTS error: ${error.message}`, 'error');
             this.updateStatus('Connected', 'connected');
+        }
+    }
+    
+    showQuotaError(errorData) {
+        // Show prominent quota error in status and logs
+        const retryTime = errorData.retryAfter ? `Try again in ${errorData.retryAfter} seconds.` : 'Try again later.';
+        const quotaMessage = `⚠️ ElevenLabs Quota Exceeded`;
+        
+        this.updateStatus(quotaMessage, 'error');
+        this.log(`${errorData.message}`, 'error');
+        this.log(`${errorData.details || retryTime}`, 'warning');
+        
+        // Show temporary prominent message
+        const statusDisplay = document.querySelector('.status-display');
+        if (statusDisplay) {
+            const originalText = statusDisplay.textContent;
+            statusDisplay.style.color = '#ff6b6b';
+            statusDisplay.style.fontWeight = 'bold';
+            
+            setTimeout(() => {
+                statusDisplay.style.color = '';
+                statusDisplay.style.fontWeight = '';
+                if (statusDisplay.textContent === quotaMessage) {
+                    this.updateStatus('Connected', 'connected');
+                }
+            }, 5000);
         }
     }
     
