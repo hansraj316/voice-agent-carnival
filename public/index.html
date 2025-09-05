@@ -203,6 +203,21 @@
             </select>
         </div>
         
+        <div class="connection-selector">
+            <label for="voiceProvider">Voice Provider:</label>
+            <select id="voiceProvider">
+                <option value="openai">🤖 OpenAI (Realtime)</option>
+                <option value="elevenlabs">🎭 ElevenLabs (TTS)</option>
+            </select>
+        </div>
+        
+        <div class="connection-selector" id="voiceSelector" style="display: none;">
+            <label for="voiceSelection">Voice:</label>
+            <select id="voiceSelection">
+                <option value="">Loading voices...</option>
+            </select>
+        </div>
+        
         <div class="connection-info" id="connectionInfo"></div>
         
         <div class="controls">

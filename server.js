@@ -5,6 +5,7 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
+import { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
 
 // Load environment variables
 dotenv.config();
@@ -112,6 +113,89 @@ class MultiModalVoiceServer {
                 console.error('❌ SIP session error:', error);
                 res.status(500).json({
                     error: 'SIP session creation failed: ' + error.message
+                });
+            }
+        });
+
+        // ElevenLabs voices endpoint
+        this.app.get('/api/elevenlabs/voices', async (req, res) => {
+            try {
+                if (!process.env.ELEVENLABS_API_KEY) {
+                    return res.status(200).json({
+                        voices: [],
+                        error: 'ElevenLabs API key not configured'
+                    });
+                }
+
+                const elevenlabs = new ElevenLabsClient({
+                    apiKey: process.env.ELEVENLABS_API_KEY
+                });
+
+                const voicesResponse = await elevenlabs.voices.getAll();
+                
+                // Map voiceId to voice_id for client compatibility
+                const mappedVoices = (voicesResponse.voices || []).map(voice => ({
+                    ...voice,
+                    voice_id: voice.voiceId
+                }));
+                
+                res.json({
+                    voices: mappedVoices,
+                    provider: 'elevenlabs'
+                });
+            } catch (error) {
+                console.error('❌ ElevenLabs voices error:', error);
+                res.status(500).json({
+                    error: 'Failed to fetch ElevenLabs voices: ' + error.message
+                });
+            }
+        });
+
+        // ElevenLabs text-to-speech endpoint
+        this.app.post('/api/elevenlabs/tts', async (req, res) => {
+            try {
+                if (!process.env.ELEVENLABS_API_KEY) {
+                    return res.status(500).json({
+                        error: 'ElevenLabs API key not configured'
+                    });
+                }
+
+                const { text, voiceId, modelId = 'eleven_multilingual_v2' } = req.body;
+
+                if (!text || !voiceId) {
+                    return res.status(400).json({
+                        error: 'Text and voiceId are required'
+                    });
+                }
+
+                const elevenlabs = new ElevenLabsClient({
+                    apiKey: process.env.ELEVENLABS_API_KEY
+                });
+
+                const audio = await elevenlabs.textToSpeech.convert(voiceId, {
+                    text: text,
+                    modelId: modelId,
+                    outputFormat: 'mp3_44100_128'
+                });
+
+                // Convert stream to buffer
+                const chunks = [];
+                const reader = audio.getReader();
+                
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    chunks.push(value);
+                }
+                
+                const audioBuffer = Buffer.concat(chunks);
+
+                res.setHeader('Content-Type', 'audio/mpeg');
+                res.send(audioBuffer);
+            } catch (error) {
+                console.error('❌ ElevenLabs TTS error:', error);
+                res.status(500).json({
+                    error: 'Failed to generate speech: ' + error.message
                 });
             }
         });

@@ -1,6 +1,8 @@
 class MultiModalVoiceClient {
     constructor() {
         this.connectionType = 'websocket'; // Default
+        this.voiceProvider = 'openai'; // Default
+        this.selectedVoice = null;
         this.connection = null;
         this.audioContext = null;
         this.stream = null;
@@ -16,6 +18,9 @@ class MultiModalVoiceClient {
     initializeElements() {
         this.statusEl = document.getElementById('status');
         this.connectionTypeSelect = document.getElementById('connectionType');
+        this.voiceProviderSelect = document.getElementById('voiceProvider');
+        this.voiceSelectionSelect = document.getElementById('voiceSelection');
+        this.voiceSelectorDiv = document.getElementById('voiceSelector');
         this.connectBtn = document.getElementById('connectBtn');
         this.micBtn = document.getElementById('micBtn');
         this.disconnectBtn = document.getElementById('disconnectBtn');
@@ -28,12 +33,23 @@ class MultiModalVoiceClient {
             this.connectionType = e.target.value;
             this.updateConnectionInfo();
         });
+        
+        this.voiceProviderSelect.addEventListener('change', (e) => {
+            this.voiceProvider = e.target.value;
+            this.updateVoiceOptions();
+        });
+        
+        this.voiceSelectionSelect.addEventListener('change', (e) => {
+            this.selectedVoice = e.target.value;
+        });
+        
         this.connectBtn.addEventListener('click', () => this.connect());
         this.micBtn.addEventListener('click', () => this.toggleListening());
         this.disconnectBtn.addEventListener('click', () => this.disconnect());
         
-        // Initialize connection info
+        // Initialize connection info and voice options
         this.updateConnectionInfo();
+        this.updateVoiceOptions();
     }
     
     initializeConnectionHandlers() {
@@ -52,6 +68,98 @@ class MultiModalVoiceClient {
         };
         
         this.connectionInfo.textContent = info[this.connectionType];
+    }
+    
+    async updateVoiceOptions() {
+        if (this.voiceProvider === 'openai') {
+            // Hide voice selector for OpenAI (uses default 'alloy' voice)
+            this.voiceSelectorDiv.style.display = 'none';
+            this.selectedVoice = 'alloy';
+        } else if (this.voiceProvider === 'elevenlabs') {
+            // Show voice selector and fetch ElevenLabs voices
+            this.voiceSelectorDiv.style.display = 'block';
+            this.voiceSelectionSelect.innerHTML = '<option value="">Loading voices...</option>';
+            
+            try {
+                const response = await fetch('/api/elevenlabs/voices');
+                const data = await response.json();
+                
+                if (data.error) {
+                    this.log(data.error, 'error');
+                    this.voiceSelectionSelect.innerHTML = '<option value="">No voices available</option>';
+                    return;
+                }
+                
+                // Populate voice dropdown
+                this.voiceSelectionSelect.innerHTML = '';
+                if (data.voices && data.voices.length > 0) {
+                    data.voices.forEach(voice => {
+                        const option = document.createElement('option');
+                        option.value = voice.voice_id;
+                        option.textContent = `${voice.name} (${voice.category || 'Custom'})`;
+                        this.voiceSelectionSelect.appendChild(option);
+                    });
+                    
+                    // Select first voice by default
+                    this.selectedVoice = data.voices[0].voice_id;
+                    this.voiceSelectionSelect.value = this.selectedVoice;
+                    
+                    this.log(`Loaded ${data.voices.length} ElevenLabs voices`);
+                } else {
+                    this.voiceSelectionSelect.innerHTML = '<option value="">No voices available</option>';
+                }
+            } catch (error) {
+                this.log(`Failed to fetch ElevenLabs voices: ${error.message}`, 'error');
+                this.voiceSelectionSelect.innerHTML = '<option value="">Error loading voices</option>';
+            }
+        }
+    }
+    
+    async playElevenLabsAudio(text) {
+        if (!this.selectedVoice) {
+            this.log('No voice selected for ElevenLabs', 'error');
+            return;
+        }
+        
+        try {
+            this.updateStatus('Generating speech...', 'speaking');
+            
+            const response = await fetch('/api/elevenlabs/tts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    text: text,
+                    voiceId: this.selectedVoice,
+                    modelId: 'eleven_multilingual_v2'
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`TTS failed: ${response.statusText}`);
+            }
+            
+            const audioBlob = await response.blob();
+            const audioUrl = URL.createObjectURL(audioBlob);
+            const audio = new Audio(audioUrl);
+            
+            audio.onended = () => {
+                this.updateStatus('Connected', 'connected');
+                URL.revokeObjectURL(audioUrl);
+            };
+            
+            audio.onerror = () => {
+                this.log('Audio playback failed', 'error');
+                this.updateStatus('Connected', 'connected');
+                URL.revokeObjectURL(audioUrl);
+            };
+            
+            await audio.play();
+            this.log('Playing ElevenLabs audio');
+            
+        } catch (error) {
+            this.log(`ElevenLabs TTS error: ${error.message}`, 'error');
+            this.updateStatus('Connected', 'connected');
+        }
     }
     
     log(message, type = 'info') {
@@ -294,10 +402,17 @@ class WebSocketHandler {
     handleMessage(message) {
         switch (message.type) {
             case 'audio_output':
-                this.client.playAudio(message.data);
+                if (this.client.voiceProvider === 'openai') {
+                    this.client.playAudio(message.data);
+                }
                 break;
             case 'transcript_input':
                 this.client.log(`You said: "${message.transcript}"`);
+                
+                // Use ElevenLabs TTS if selected
+                if (this.client.voiceProvider === 'elevenlabs' && message.transcript) {
+                    this.client.playElevenLabsAudio(message.transcript);
+                }
                 break;
             case 'speech_started':
                 this.client.updateStatus('Listening...', 'listening');
