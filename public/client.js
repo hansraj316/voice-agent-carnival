@@ -184,11 +184,23 @@ class MultiModalVoiceClient {
     }
     
     disconnect() {
+        if (!this.isConnected) {
+            this.log('Already disconnected', 'info');
+            return;
+        }
+        
         const handler = this.connectionHandlers[this.connectionType];
         if (handler) {
             handler.disconnect();
         }
         this.stopListening();
+        
+        // Ensure consistent UI state regardless of handler
+        this.isConnected = false;
+        this.updateStatus('Disconnected');
+        this.connectBtn.disabled = false;
+        this.micBtn.disabled = true;
+        this.disconnectBtn.disabled = true;
     }
     
     async toggleListening() {
@@ -732,7 +744,7 @@ class WebRTCHandler {
         this.client.updateStatus('Disconnected');
         this.client.connectBtn.disabled = false;
         this.client.micBtn.disabled = true;
-        this.client.disconnectBtn.disabled = false;
+        this.client.disconnectBtn.disabled = true;
     }
     
     sendAudio(audioData) {
@@ -796,6 +808,10 @@ class SIPHandler {
     disconnect() {
         this.client.log('SIP disconnected');
         this.client.isConnected = false;
+        this.client.updateStatus('Disconnected');
+        this.client.connectBtn.disabled = false;
+        this.client.micBtn.disabled = true;
+        this.client.disconnectBtn.disabled = true;
     }
     
     sendAudio(audioData) {
