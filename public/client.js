@@ -30,7 +30,15 @@ class MultiModalVoiceClient {
     
     setupEventListeners() {
         this.connectionTypeSelect.addEventListener('change', (e) => {
-            this.connectionType = e.target.value;
+            const newConnectionType = e.target.value;
+            
+            // Auto-disconnect if currently connected and switching types
+            if (this.isConnected && this.connectionType !== newConnectionType) {
+                this.log(`Switching connection type from ${this.connectionType} to ${newConnectionType} - disconnecting current session`);
+                this.disconnect();
+            }
+            
+            this.connectionType = newConnectionType;
             this.updateConnectionInfo();
         });
         
