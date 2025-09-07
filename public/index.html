@@ -5,229 +5,474 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Voice Echo Agent</title>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        :root {
+            --bg-primary: #0d0d0d;
+            --bg-secondary: #1a1a1a;
+            --bg-tertiary: #262626;
+            --bg-accent: #333333;
+            --text-primary: #ffffff;
+            --text-secondary: #a3a3a3;
+            --text-muted: #737373;
+            --accent-blue: #2563eb;
+            --accent-purple: #7c3aed;
+            --accent-green: #16a34a;
+            --accent-orange: #ea580c;
+            --accent-red: #dc2626;
+            --border-subtle: #404040;
+            --border-accent: #525252;
+            --shadow-subtle: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            --shadow-medium: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            --shadow-large: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+            --gradient-primary: linear-gradient(135deg, #1e1e1e 0%, #262626 100%);
+            --gradient-accent: linear-gradient(135deg, var(--accent-purple) 0%, var(--accent-blue) 100%);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
             min-height: 100vh;
-            color: white;
+            overflow-x: hidden;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle at 20% 50%, rgba(120, 58, 237, 0.1) 0%, transparent 50%),
+                        radial-gradient(circle at 80% 20%, rgba(37, 99, 235, 0.1) 0%, transparent 50%),
+                        radial-gradient(circle at 40% 80%, rgba(16, 163, 74, 0.05) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: -1;
         }
         
         .container {
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            padding: 30px;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .header {
             text-align: center;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            margin-bottom: 3rem;
         }
         
         h1 {
-            margin-bottom: 30px;
-            font-size: 2.5em;
-            font-weight: 300;
+            font-size: clamp(2rem, 4vw, 3.5rem);
+            font-weight: 700;
+            background: var(--gradient-accent);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 1rem;
+            letter-spacing: -0.02em;
+        }
+
+        .subtitle {
+            font-size: 1.125rem;
+            color: var(--text-secondary);
+            font-weight: 400;
         }
         
+        .status-container {
+            margin-bottom: 2.5rem;
+        }
+
         .status {
-            font-size: 1.2em;
-            margin: 20px 0;
-            padding: 15px;
-            border-radius: 10px;
-            background: rgba(255, 255, 255, 0.1);
-            transition: all 0.3s ease;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            padding: 1.25rem 1.5rem;
+            font-size: 1rem;
+            font-weight: 500;
+            text-align: center;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: var(--shadow-subtle);
         }
         
         .status.connected {
-            background: rgba(76, 175, 80, 0.3);
+            background: rgba(16, 163, 74, 0.1);
+            border-color: var(--accent-green);
+            color: #22c55e;
         }
         
         .status.listening {
-            background: rgba(33, 150, 243, 0.3);
-            animation: pulse 2s infinite;
+            background: rgba(37, 99, 235, 0.1);
+            border-color: var(--accent-blue);
+            color: #3b82f6;
+            animation: pulse-glow 2s infinite;
         }
         
         .status.speaking {
-            background: rgba(255, 152, 0, 0.3);
+            background: rgba(234, 88, 12, 0.1);
+            border-color: var(--accent-orange);
+            color: #f97316;
         }
         
         .status.connecting {
-            background: rgba(156, 39, 176, 0.3);
-            animation: pulse 2s infinite;
+            background: rgba(120, 58, 237, 0.1);
+            border-color: var(--accent-purple);
+            color: #8b5cf6;
+            animation: pulse-glow 2s infinite;
         }
         
         .status.warning {
-            background: rgba(255, 193, 7, 0.3);
+            background: rgba(234, 179, 8, 0.1);
+            border-color: #eab308;
+            color: #fbbf24;
         }
         
         .status.error {
-            background: rgba(244, 67, 54, 0.3);
+            background: rgba(220, 38, 38, 0.1);
+            border-color: var(--accent-red);
+            color: #ef4444;
         }
         
-        @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.05); }
-            100% { transform: scale(1); }
+        @keyframes pulse-glow {
+            0%, 100% { 
+                transform: scale(1); 
+                box-shadow: 0 0 20px rgba(37, 99, 235, 0.2);
+            }
+            50% { 
+                transform: scale(1.02); 
+                box-shadow: 0 0 25px rgba(37, 99, 235, 0.4);
+            }
+        }
+
+        .config-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2.5rem;
+        }
+        
+        .config-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 16px;
+            padding: 1.5rem;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: var(--shadow-subtle);
+        }
+
+        .config-card:hover {
+            border-color: var(--border-accent);
+            box-shadow: var(--shadow-medium);
+            transform: translateY(-2px);
+        }
+        
+        .config-card label {
+            display: block;
+            font-weight: 600;
+            font-size: 0.875rem;
+            color: var(--text-primary);
+            margin-bottom: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        .config-card select {
+            width: 100%;
+            padding: 0.875rem 1rem;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            font-family: inherit;
+            cursor: pointer;
+            outline: none;
+            transition: all 0.2s ease;
+        }
+        
+        .config-card select:focus {
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+        
+        .config-card select:hover {
+            border-color: var(--border-accent);
+        }
+        
+        .config-card option {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            padding: 0.75rem;
+        }
+
+        .connection-info {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-subtle);
+            border-left: 4px solid var(--accent-blue);
+            border-radius: 8px;
+            padding: 1rem 1.25rem;
+            margin: 1.5rem 0;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            line-height: 1.5;
         }
         
         .controls {
-            margin: 30px 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 1rem;
+            margin: 2.5rem 0;
+            flex-wrap: wrap;
         }
         
         button {
-            background: rgba(255, 255, 255, 0.2);
-            border: 2px solid rgba(255, 255, 255, 0.3);
-            color: white;
-            padding: 15px 30px;
-            margin: 10px;
-            border-radius: 50px;
-            font-size: 1.1em;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-primary);
+            padding: 0.875rem 1.5rem;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            font-family: inherit;
             cursor: pointer;
-            transition: all 0.3s ease;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            outline: none;
+            min-width: 120px;
         }
         
-        button:hover {
-            background: rgba(255, 255, 255, 0.3);
-            transform: translateY(-2px);
+        button:hover:not(:disabled) {
+            background: var(--bg-accent);
+            border-color: var(--border-accent);
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-medium);
+        }
+
+        button:active:not(:disabled) {
+            transform: translateY(0);
         }
         
         button:disabled {
             opacity: 0.5;
             cursor: not-allowed;
+            transform: none;
+        }
+
+        button.primary {
+            background: var(--gradient-accent);
+            border: none;
+            color: white;
+            font-weight: 600;
+        }
+
+        button.primary:hover:not(:disabled) {
+            opacity: 0.9;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(120, 58, 237, 0.25);
         }
         
         .mic-button {
-            width: 100px;
-            height: 100px;
+            width: 80px;
+            height: 80px;
             border-radius: 50%;
-            font-size: 2em;
-            margin: 20px;
-            background: rgba(244, 67, 54, 0.7);
+            font-size: 1.5rem;
+            min-width: 80px;
+            background: var(--gradient-accent);
+            border: none;
+            color: white;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .mic-button::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: radial-gradient(circle, rgba(255,255,255,0.2) 0%, transparent 70%);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .mic-button:hover:not(:disabled)::before {
+            opacity: 1;
         }
         
         .mic-button.listening {
-            background: rgba(76, 175, 80, 0.7);
-            animation: pulse 1.5s infinite;
+            animation: mic-pulse 1.5s infinite;
+            box-shadow: 0 0 30px rgba(16, 163, 74, 0.4);
+        }
+
+        @keyframes mic-pulse {
+            0%, 100% { 
+                transform: scale(1);
+                box-shadow: 0 0 30px rgba(16, 163, 74, 0.4);
+            }
+            50% { 
+                transform: scale(1.1);
+                box-shadow: 0 0 40px rgba(16, 163, 74, 0.6);
+            }
         }
         
+        .log-container {
+            margin-top: 2.5rem;
+        }
+
+        .log-header {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
         .log {
-            margin-top: 30px;
-            text-align: left;
-            background: rgba(0, 0, 0, 0.2);
-            padding: 20px;
-            border-radius: 10px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            padding: 1.25rem;
             height: 200px;
             overflow-y: auto;
-            font-family: 'Courier New', monospace;
-            font-size: 0.9em;
+            font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: 0.8rem;
+            line-height: 1.4;
+        }
+
+        .log::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .log::-webkit-scrollbar-track {
+            background: var(--bg-tertiary);
+            border-radius: 2px;
+        }
+
+        .log::-webkit-scrollbar-thumb {
+            background: var(--border-accent);
+            border-radius: 2px;
+        }
+
+        .log::-webkit-scrollbar-thumb:hover {
+            background: var(--text-muted);
         }
         
         .log-entry {
-            margin-bottom: 5px;
-            padding: 2px 0;
+            margin-bottom: 0.25rem;
+            padding: 0.125rem 0;
+            word-wrap: break-word;
         }
         
         .log-entry.error {
-            color: #ff6b6b;
+            color: #ef4444;
         }
         
         .log-entry.info {
-            color: #4ecdc4;
+            color: #06b6d4;
         }
         
         .log-entry.warning {
-            color: #ffc107;
+            color: #f59e0b;
         }
-        
-        .connection-selector {
-            margin: 20px 0;
-            padding: 20px;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 15px;
-            backdrop-filter: blur(5px);
+
+        .log-entry.success {
+            color: #10b981;
         }
-        
-        .connection-selector label {
-            display: block;
-            margin-bottom: 10px;
-            font-weight: 600;
-            font-size: 1.1em;
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 1rem;
+            }
+
+            .config-grid {
+                grid-template-columns: 1fr;
+                gap: 1rem;
+            }
+
+            .controls {
+                flex-direction: column;
+                gap: 0.75rem;
+            }
+
+            button {
+                width: 100%;
+            }
+
+            .mic-button {
+                width: 70px;
+                height: 70px;
+                font-size: 1.25rem;
+            }
         }
-        
-        .connection-selector select {
-            width: 100%;
-            padding: 12px 15px;
-            background: rgba(255, 255, 255, 0.2);
-            border: 2px solid rgba(255, 255, 255, 0.3);
-            border-radius: 10px;
-            color: white;
-            font-size: 1em;
-            cursor: pointer;
-            outline: none;
-        }
-        
-        .connection-selector select:focus {
-            border-color: rgba(255, 255, 255, 0.5);
-            background: rgba(255, 255, 255, 0.25);
-        }
-        
-        .connection-selector option {
-            background: #444;
-            color: white;
-            padding: 10px;
-        }
-        
-        .connection-info {
-            margin: 15px 0;
-            padding: 15px;
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 10px;
-            font-size: 0.95em;
-            line-height: 1.4;
-            border-left: 4px solid rgba(255, 255, 255, 0.3);
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🎤 Multi-Modal Voice Echo Agent</h1>
-        <div class="status" id="status">Disconnected</div>
-        
-        <div class="connection-selector">
-            <label for="connectionType">Connection Type:</label>
-            <select id="connectionType">
-                <option value="websocket">🔌 WebSocket (Server Proxy)</option>
-                <option value="webrtc">📡 WebRTC (Direct Browser)</option>
-                <option value="sip">📞 SIP (VoIP Integration)</option>
-            </select>
+        <div class="header">
+            <h1>Voice Echo Agent</h1>
+            <p class="subtitle">Multi-Modal Voice Intelligence Platform</p>
         </div>
         
-        <div class="connection-selector">
-            <label for="voiceProvider">Voice Provider:</label>
-            <select id="voiceProvider">
-                <option value="openai">🤖 OpenAI (Realtime)</option>
-                <option value="elevenlabs">🎭 ElevenLabs (TTS)</option>
-            </select>
+        <div class="status-container">
+            <div class="status" id="status">Disconnected</div>
         </div>
         
-        <div class="connection-selector" id="voiceSelector" style="display: none;">
-            <label for="voiceSelection">Voice:</label>
-            <select id="voiceSelection">
-                <option value="">Loading voices...</option>
-            </select>
+        <div class="config-grid">
+            <div class="config-card">
+                <label for="connectionType">Connection Type</label>
+                <select id="connectionType">
+                    <option value="websocket">🔌 WebSocket (Server Proxy)</option>
+                    <option value="webrtc">📡 WebRTC (Direct Browser)</option>
+                    <option value="sip">📞 SIP (VoIP Integration)</option>
+                </select>
+            </div>
+            
+            <div class="config-card">
+                <label for="voiceProvider">Voice Provider</label>
+                <select id="voiceProvider">
+                    <option value="openai">🤖 OpenAI (Realtime)</option>
+                    <option value="elevenlabs">🎭 ElevenLabs (TTS)</option>
+                </select>
+            </div>
+            
+            <div class="config-card" id="voiceSelector" style="display: none;">
+                <label for="voiceSelection">Voice Selection</label>
+                <select id="voiceSelection">
+                    <option value="">Loading voices...</option>
+                </select>
+            </div>
         </div>
         
         <div class="connection-info" id="connectionInfo"></div>
         
         <div class="controls">
-            <button id="connectBtn">Connect</button>
+            <button id="connectBtn" class="primary">Connect</button>
             <button class="mic-button" id="micBtn" disabled>🎤</button>
             <button id="disconnectBtn" disabled>Disconnect</button>
         </div>
         
-        <div class="log" id="log">
-            <div class="log-entry info">Ready to connect...</div>
+        <div class="log-container">
+            <div class="log-header">System Logs</div>
+            <div class="log" id="log">
+                <div class="log-entry info">Ready to connect...</div>
+            </div>
         </div>
     </div>
 
