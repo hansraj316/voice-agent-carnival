@@ -6,6 +6,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
+import { VoiceAPIEndpoints } from './voice-api-endpoints.js';
 
 // Load environment variables
 dotenv.config();
@@ -198,6 +199,14 @@ class MultiModalVoiceServer {
                     error: 'Failed to generate speech: ' + error.message
                 });
             }
+        });
+
+        // Initialize Voice API Router endpoints
+        new VoiceAPIEndpoints(this.app);
+
+        // Add route for voice router UI
+        this.app.get('/voice-router', (req, res) => {
+            res.sendFile(path.join(__dirname, 'public', 'voice-router-ui.html'));
         });
     }
     
