@@ -25,9 +25,14 @@ class MultiModalVoiceServer {
         
         const port = process.env.PORT || 3000;
         this.server.listen(port, () => {
-            console.log(`🎤 Multi-Modal Voice Echo Agent running on http://localhost:${port}`);
+            console.log(`🎤 Multi-Modal Voice Agent Server running on http://localhost:${port}`);
             console.log(`📡 Supporting: WebSocket | WebRTC | SIP connections`);
-            console.log(`🌐 Open: http://localhost:${port}`);
+            console.log(`🌐 Original Voice Agent: http://localhost:${port}`);
+            console.log(`🚀 Voice API Router (Open Router Style): http://localhost:${port}/voice-router`);
+            console.log(`📊 API Documentation:`);
+            console.log(`   - Models: http://localhost:${port}/v1/voice/models`);
+            console.log(`   - Providers: http://localhost:${port}/v1/voice/providers`);
+            console.log(`   - Usage: http://localhost:${port}/v1/voice/usage`);
         });
     }
     
