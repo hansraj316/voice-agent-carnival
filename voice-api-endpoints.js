@@ -5,11 +5,18 @@
 
 import VoiceRouter from './voice-router.js';
 import { VOICE_PROVIDERS, PROVIDER_CATEGORIES } from './voice-providers-config.js';
+import ConfigManager from './config-manager.js';
 
 export class VoiceAPIEndpoints {
     constructor(app) {
         this.app = app;
         this.voiceRouter = new VoiceRouter();
+        this.configManager = new ConfigManager();
+        this.init();
+    }
+
+    async init() {
+        await this.configManager.init();
         this.setupRoutes();
     }
 
@@ -33,6 +40,16 @@ export class VoiceAPIEndpoints {
         
         // Provider validation
         this.app.post('/v1/voice/validate', this.validateProvider.bind(this));
+        
+        // Configuration Management Endpoints
+        this.app.post('/v1/voice/config/provider', this.saveProviderConfig.bind(this));
+        this.app.get('/v1/voice/config/provider/:provider', this.getProviderConfig.bind(this));
+        this.app.delete('/v1/voice/config/provider/:provider', this.removeProviderConfig.bind(this));
+        this.app.get('/v1/voice/config/providers', this.getUserProviders.bind(this));
+        this.app.post('/v1/voice/config/settings', this.updateUserSettings.bind(this));
+        this.app.get('/v1/voice/config/settings', this.getUserSettings.bind(this));
+        this.app.delete('/v1/voice/config/clear', this.clearUserConfig.bind(this));
+        this.app.get('/v1/voice/config/export', this.exportUserConfig.bind(this));
     }
 
     /**
@@ -483,6 +500,267 @@ export class VoiceAPIEndpoints {
 
     generateSessionId() {
         return 'sess_' + Math.random().toString(36).substr(2, 16) + Date.now().toString(36);
+    }
+
+    // Configuration Management Methods
+    getUserId(req) {
+        // Generate user ID from IP + User-Agent for basic session management
+        const ip = req.ip || req.connection.remoteAddress || 'unknown';
+        const userAgent = req.get('User-Agent') || 'unknown';
+        return Buffer.from(`${ip}-${userAgent}`).toString('base64').substr(0, 16);
+    }
+
+    /**
+     * Save provider configuration
+     * POST /v1/voice/config/provider
+     */
+    async saveProviderConfig(req, res) {
+        try {
+            const { provider, api_key, model, voice, options = {} } = req.body;
+            const userId = this.getUserId(req);
+
+            if (!provider || !api_key) {
+                return res.status(400).json({ 
+                    error: 'Provider and api_key are required' 
+                });
+            }
+
+            // Validate configuration
+            const validation = this.configManager.validateProviderConfig(provider, {
+                apiKey: api_key,
+                model,
+                voice,
+                ...options
+            });
+
+            if (!validation.valid) {
+                return res.status(400).json({ 
+                    error: 'Invalid configuration',
+                    details: validation.errors
+                });
+            }
+
+            const result = await this.configManager.setProviderConfig(userId, provider, {
+                apiKey: api_key,
+                model,
+                voice,
+                options,
+                savedAt: new Date().toISOString()
+            });
+
+            res.json({
+                object: 'provider_config',
+                saved: true,
+                provider,
+                user_id: userId,
+                has_api_key: !!api_key
+            });
+
+        } catch (error) {
+            console.error('Save provider config error:', error);
+            res.status(500).json({ 
+                error: error.message,
+                type: 'config_save_error'
+            });
+        }
+    }
+
+    /**
+     * Get provider configuration
+     * GET /v1/voice/config/provider/:provider
+     */
+    async getProviderConfig(req, res) {
+        try {
+            const { provider } = req.params;
+            const userId = this.getUserId(req);
+
+            const config = this.configManager.getProviderConfig(userId, provider);
+
+            if (!config) {
+                return res.status(404).json({ 
+                    error: 'Provider configuration not found' 
+                });
+            }
+
+            // Return config without sensitive data
+            res.json({
+                object: 'provider_config',
+                provider,
+                model: config.model,
+                voice: config.voice,
+                options: config.options,
+                has_api_key: !!config.apiKey,
+                saved_at: config.savedAt
+            });
+
+        } catch (error) {
+            console.error('Get provider config error:', error);
+            res.status(500).json({ 
+                error: error.message,
+                type: 'config_get_error'
+            });
+        }
+    }
+
+    /**
+     * Remove provider configuration
+     * DELETE /v1/voice/config/provider/:provider
+     */
+    async removeProviderConfig(req, res) {
+        try {
+            const { provider } = req.params;
+            const userId = this.getUserId(req);
+
+            const result = await this.configManager.removeProviderConfig(userId, provider);
+
+            if (!result.success) {
+                return res.status(404).json({ 
+                    error: result.error || 'Provider configuration not found' 
+                });
+            }
+
+            res.json({
+                object: 'provider_config_deleted',
+                provider,
+                user_id: userId,
+                success: true
+            });
+
+        } catch (error) {
+            console.error('Remove provider config error:', error);
+            res.status(500).json({ 
+                error: error.message,
+                type: 'config_delete_error'
+            });
+        }
+    }
+
+    /**
+     * Get all user providers
+     * GET /v1/voice/config/providers
+     */
+    async getUserProviders(req, res) {
+        try {
+            const userId = this.getUserId(req);
+            const providers = this.configManager.getUserProviders(userId);
+
+            res.json({
+                object: 'user_providers',
+                user_id: userId,
+                providers,
+                total: providers.length
+            });
+
+        } catch (error) {
+            console.error('Get user providers error:', error);
+            res.status(500).json({ 
+                error: error.message,
+                type: 'providers_get_error'
+            });
+        }
+    }
+
+    /**
+     * Update user settings
+     * POST /v1/voice/config/settings
+     */
+    async updateUserSettings(req, res) {
+        try {
+            const userId = this.getUserId(req);
+            const settings = await this.configManager.updateUserSettings(userId, req.body);
+
+            res.json({
+                object: 'user_settings',
+                user_id: userId,
+                settings,
+                updated_at: new Date().toISOString()
+            });
+
+        } catch (error) {
+            console.error('Update user settings error:', error);
+            res.status(500).json({ 
+                error: error.message,
+                type: 'settings_update_error'
+            });
+        }
+    }
+
+    /**
+     * Get user settings
+     * GET /v1/voice/config/settings
+     */
+    async getUserSettings(req, res) {
+        try {
+            const userId = this.getUserId(req);
+            const settings = this.configManager.getUserSettings(userId);
+
+            res.json({
+                object: 'user_settings',
+                user_id: userId,
+                settings
+            });
+
+        } catch (error) {
+            console.error('Get user settings error:', error);
+            res.status(500).json({ 
+                error: error.message,
+                type: 'settings_get_error'
+            });
+        }
+    }
+
+    /**
+     * Clear all user configuration
+     * DELETE /v1/voice/config/clear
+     */
+    async clearUserConfig(req, res) {
+        try {
+            const userId = this.getUserId(req);
+            const result = await this.configManager.clearUserConfig(userId);
+
+            res.json({
+                object: 'user_config_cleared',
+                user_id: userId,
+                success: result.success
+            });
+
+        } catch (error) {
+            console.error('Clear user config error:', error);
+            res.status(500).json({ 
+                error: error.message,
+                type: 'config_clear_error'
+            });
+        }
+    }
+
+    /**
+     * Export user configuration
+     * GET /v1/voice/config/export
+     */
+    async exportUserConfig(req, res) {
+        try {
+            const userId = this.getUserId(req);
+            const config = this.configManager.exportUserConfig(userId);
+
+            if (!config) {
+                return res.status(404).json({ 
+                    error: 'No configuration found for user' 
+                });
+            }
+
+            res.json({
+                object: 'user_config_export',
+                user_id: userId,
+                config
+            });
+
+        } catch (error) {
+            console.error('Export user config error:', error);
+            res.status(500).json({ 
+                error: error.message,
+                type: 'config_export_error'
+            });
+        }
     }
 }
 
