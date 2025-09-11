@@ -32,6 +32,9 @@ class MultiModalVoiceServer {
             console.log(`📊 API Documentation:`);
             console.log(`   - Models: http://localhost:${port}/v1/voice/models`);
             console.log(`   - Providers: http://localhost:${port}/v1/voice/providers`);
+            console.log(`   - Health: http://localhost:${port}/v1/voice/health`);
+            console.log(`   - Analytics: http://localhost:${port}/v1/voice/analytics`);
+            console.log(`   - Cost Report: http://localhost:${port}/v1/voice/cost-report`);
             console.log(`   - Usage: http://localhost:${port}/v1/voice/usage`);
         });
     }

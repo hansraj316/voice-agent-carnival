@@ -6,17 +6,20 @@
 import VoiceRouter from './voice-router.js';
 import { VOICE_PROVIDERS, PROVIDER_CATEGORIES } from './voice-providers-config.js';
 import ConfigManager from './config-manager.js';
+import AnalyticsTracker from './analytics-tracker.js';
 
 export class VoiceAPIEndpoints {
     constructor(app) {
         this.app = app;
         this.voiceRouter = new VoiceRouter();
         this.configManager = new ConfigManager();
+        this.analyticsTracker = new AnalyticsTracker();
         this.init();
     }
 
     async init() {
         await this.configManager.init();
+        await this.analyticsTracker.init();
         this.setupRoutes();
     }
 
@@ -50,6 +53,19 @@ export class VoiceAPIEndpoints {
         this.app.get('/v1/voice/config/settings', this.getUserSettings.bind(this));
         this.app.delete('/v1/voice/config/clear', this.clearUserConfig.bind(this));
         this.app.get('/v1/voice/config/export', this.exportUserConfig.bind(this));
+        
+        // Health and Error Management Endpoints
+        this.app.get('/v1/voice/health', this.getSystemHealth.bind(this));
+        this.app.get('/v1/voice/health/:provider', this.getProviderHealth.bind(this));
+        this.app.post('/v1/voice/health/:provider/reset', this.resetProviderCircuitBreaker.bind(this));
+        this.app.get('/v1/voice/errors', this.getErrorStats.bind(this));
+        this.app.get('/v1/voice/errors/:provider', this.getProviderErrors.bind(this));
+        
+        // Analytics and Cost Tracking Endpoints
+        this.app.get('/v1/voice/analytics', this.getAnalytics.bind(this));
+        this.app.get('/v1/voice/analytics/:provider', this.getProviderAnalytics.bind(this));
+        this.app.get('/v1/voice/cost-report', this.getCostReport.bind(this));
+        this.app.get('/v1/voice/cost-report/:period', this.getCostReportByPeriod.bind(this));
     }
 
     /**
@@ -142,6 +158,9 @@ export class VoiceAPIEndpoints {
      * POST /v1/voice/transcribe
      */
     async transcribe(req, res) {
+        const sessionId = this.generateSessionId();
+        let session = null;
+        
         try {
             const { 
                 provider, 
@@ -164,6 +183,16 @@ export class VoiceAPIEndpoints {
                     error: 'Either audio_file or audio_url is required' 
                 });
             }
+
+            // Start analytics tracking
+            session = this.analyticsTracker.startOperation(sessionId, {
+                provider,
+                operation: 'transcribe',
+                model,
+                language,
+                hasAudioFile: !!audio_file,
+                hasAudioUrl: !!audio_url
+            });
 
             const adapter = await this.voiceRouter.routeRequest({
                 provider,
@@ -188,6 +217,17 @@ export class VoiceAPIEndpoints {
 
             await adapter.disconnect();
 
+            // Complete analytics tracking
+            if (session) {
+                this.analyticsTracker.endOperation(sessionId, {
+                    success: true,
+                    usage: {
+                        minutes: (session.duration || 0) / 60000,
+                        characters: result.text?.length || 0
+                    }
+                });
+            }
+
             res.json({
                 object: 'transcription',
                 provider,
@@ -201,6 +241,15 @@ export class VoiceAPIEndpoints {
 
         } catch (error) {
             console.error('Transcription error:', error);
+            
+            // Track error in analytics
+            if (session) {
+                this.analyticsTracker.trackError(sessionId, {
+                    type: 'transcription_error',
+                    message: error.message
+                });
+            }
+            
             res.status(500).json({ 
                 error: error.message,
                 type: 'transcription_error'
@@ -761,6 +810,281 @@ export class VoiceAPIEndpoints {
                 type: 'config_export_error'
             });
         }
+    }
+
+    // Health and Error Management Methods
+
+    /**
+     * Get system health status
+     * GET /v1/voice/health
+     */
+    async getSystemHealth(req, res) {
+        try {
+            const health = this.voiceRouter.getSystemHealth();
+            
+            res.json({
+                object: 'system_health',
+                ...health,
+                timestamp: new Date().toISOString()
+            });
+
+        } catch (error) {
+            console.error('Get system health error:', error);
+            res.status(500).json({ 
+                error: error.message,
+                type: 'health_check_error'
+            });
+        }
+    }
+
+    /**
+     * Get provider-specific health
+     * GET /v1/voice/health/:provider
+     */
+    async getProviderHealth(req, res) {
+        try {
+            const { provider } = req.params;
+            const errorStats = this.voiceRouter.getErrorStats(provider);
+            const isAvailable = this.voiceRouter.isProviderAvailable(provider);
+
+            if (!errorStats) {
+                return res.status(404).json({ 
+                    error: 'Provider not found' 
+                });
+            }
+
+            res.json({
+                object: 'provider_health',
+                provider,
+                available: isAvailable,
+                ...errorStats,
+                timestamp: new Date().toISOString()
+            });
+
+        } catch (error) {
+            console.error('Get provider health error:', error);
+            res.status(500).json({ 
+                error: error.message,
+                type: 'provider_health_error'
+            });
+        }
+    }
+
+    /**
+     * Reset provider circuit breaker
+     * POST /v1/voice/health/:provider/reset
+     */
+    async resetProviderCircuitBreaker(req, res) {
+        try {
+            const { provider } = req.params;
+            
+            if (!VOICE_PROVIDERS[provider]) {
+                return res.status(404).json({ 
+                    error: 'Provider not found' 
+                });
+            }
+
+            this.voiceRouter.resetCircuitBreaker(provider);
+
+            res.json({
+                object: 'circuit_breaker_reset',
+                provider,
+                success: true,
+                timestamp: new Date().toISOString()
+            });
+
+        } catch (error) {
+            console.error('Reset circuit breaker error:', error);
+            res.status(500).json({ 
+                error: error.message,
+                type: 'circuit_breaker_reset_error'
+            });
+        }
+    }
+
+    /**
+     * Get error statistics
+     * GET /v1/voice/errors
+     */
+    async getErrorStats(req, res) {
+        try {
+            const stats = this.voiceRouter.getErrorStats();
+            
+            res.json({
+                object: 'error_statistics',
+                stats,
+                timestamp: new Date().toISOString()
+            });
+
+        } catch (error) {
+            console.error('Get error stats error:', error);
+            res.status(500).json({ 
+                error: error.message,
+                type: 'error_stats_error'
+            });
+        }
+    }
+
+    /**
+     * Get provider-specific error statistics
+     * GET /v1/voice/errors/:provider
+     */
+    async getProviderErrors(req, res) {
+        try {
+            const { provider } = req.params;
+            const stats = this.voiceRouter.getErrorStats(provider);
+
+            if (!stats) {
+                return res.status(404).json({ 
+                    error: 'Provider not found or no error data' 
+                });
+            }
+
+            res.json({
+                object: 'provider_error_statistics',
+                provider,
+                ...stats,
+                timestamp: new Date().toISOString()
+            });
+
+        } catch (error) {
+            console.error('Get provider errors error:', error);
+            res.status(500).json({ 
+                error: error.message,
+                type: 'provider_errors_error'
+            });
+        }
+    }
+
+    // Analytics and Cost Tracking Methods
+
+    /**
+     * Get analytics data
+     * GET /v1/voice/analytics
+     */
+    async getAnalytics(req, res) {
+        try {
+            const { 
+                provider, 
+                timeRange, 
+                operation 
+            } = req.query;
+
+            const analytics = this.analyticsTracker.getAnalytics({
+                provider,
+                timeRange: timeRange ? parseInt(timeRange) : null,
+                operation
+            });
+
+            res.json({
+                object: 'analytics',
+                ...analytics,
+                timestamp: new Date().toISOString()
+            });
+
+        } catch (error) {
+            console.error('Get analytics error:', error);
+            res.status(500).json({ 
+                error: error.message,
+                type: 'analytics_error'
+            });
+        }
+    }
+
+    /**
+     * Get provider-specific analytics
+     * GET /v1/voice/analytics/:provider
+     */
+    async getProviderAnalytics(req, res) {
+        try {
+            const { provider } = req.params;
+            const { timeRange, operation } = req.query;
+
+            if (!VOICE_PROVIDERS[provider]) {
+                return res.status(404).json({ 
+                    error: 'Provider not found' 
+                });
+            }
+
+            const analytics = this.analyticsTracker.getAnalytics({
+                provider,
+                timeRange: timeRange ? parseInt(timeRange) : null,
+                operation
+            });
+
+            res.json({
+                object: 'provider_analytics',
+                provider,
+                ...analytics,
+                timestamp: new Date().toISOString()
+            });
+
+        } catch (error) {
+            console.error('Get provider analytics error:', error);
+            res.status(500).json({ 
+                error: error.message,
+                type: 'provider_analytics_error'
+            });
+        }
+    }
+
+    /**
+     * Get cost report (default: daily)
+     * GET /v1/voice/cost-report
+     */
+    async getCostReport(req, res) {
+        try {
+            const report = this.analyticsTracker.generateCostReport('day');
+
+            res.json({
+                object: 'cost_report',
+                ...report,
+                timestamp: new Date().toISOString()
+            });
+
+        } catch (error) {
+            console.error('Get cost report error:', error);
+            res.status(500).json({ 
+                error: error.message,
+                type: 'cost_report_error'
+            });
+        }
+    }
+
+    /**
+     * Get cost report by period
+     * GET /v1/voice/cost-report/:period
+     */
+    async getCostReportByPeriod(req, res) {
+        try {
+            const { period } = req.params;
+            
+            if (!['hour', 'day', 'week', 'month'].includes(period)) {
+                return res.status(400).json({ 
+                    error: 'Invalid period. Must be: hour, day, week, or month' 
+                });
+            }
+
+            const report = this.analyticsTracker.generateCostReport(period);
+
+            res.json({
+                object: 'cost_report',
+                ...report,
+                timestamp: new Date().toISOString()
+            });
+
+        } catch (error) {
+            console.error('Get cost report by period error:', error);
+            res.status(500).json({ 
+                error: error.message,
+                type: 'cost_report_period_error'
+            });
+        }
+    }
+
+    // Helper method to generate session ID
+    generateSessionId() {
+        return 'sess_' + Math.random().toString(36).substr(2, 16) + Date.now().toString(36);
     }
 }
 

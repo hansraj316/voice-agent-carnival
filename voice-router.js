@@ -5,12 +5,21 @@
 
 import { VOICE_PROVIDERS } from './voice-providers-config.js';
 import { WebSocket } from 'ws';
+import { VoiceErrorHandler, VoiceError } from './error-handler.js';
 
 export class VoiceRouter {
-    constructor() {
+    constructor(options = {}) {
         this.providers = VOICE_PROVIDERS;
         this.activeConnections = new Map();
         this.usage = new Map(); // Track usage per provider
+        
+        // Initialize error handler
+        this.errorHandler = new VoiceErrorHandler({
+            maxRetries: options.maxRetries || 3,
+            retryDelay: options.retryDelay || 1000,
+            circuitBreakerThreshold: options.circuitBreakerThreshold || 5,
+            circuitBreakerTimeout: options.circuitBreakerTimeout || 30000
+        });
     }
 
     /**
@@ -146,6 +155,52 @@ export class VoiceRouter {
 
         // Provider-specific validation could go here
         return { valid: true };
+    }
+
+    /**
+     * Route request with error handling and fallback
+     * @param {Object} config - Request configuration including fallback providers
+     */
+    async routeWithFallback(config) {
+        const { provider, fallbackProviders = [], ...restConfig } = config;
+        
+        return await this.errorHandler.executeWithFallback(
+            () => this.routeRequest({ provider, ...restConfig }),
+            {
+                provider,
+                fallbackProviders,
+                retries: config.retries || 3,
+                timeout: config.timeout || 30000
+            }
+        );
+    }
+
+    /**
+     * Get error statistics for providers
+     */
+    getErrorStats(provider = null) {
+        return this.errorHandler.getErrorStats(provider);
+    }
+
+    /**
+     * Get system health status
+     */
+    getSystemHealth() {
+        return this.errorHandler.getSystemHealth();
+    }
+
+    /**
+     * Reset circuit breaker for a provider
+     */
+    resetCircuitBreaker(provider) {
+        return this.errorHandler.resetCircuitBreaker(provider);
+    }
+
+    /**
+     * Check if provider is available
+     */
+    isProviderAvailable(provider) {
+        return this.errorHandler.isProviderAvailable(provider);
     }
 }
 

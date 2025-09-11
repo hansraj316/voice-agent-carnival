@@ -1,0 +1,17 @@
+{
+  "version": "1.0.0",
+  "lastSaved": "2025-09-11T03:24:21.399Z",
+  "sessionStart": "2025-09-11T03:00:21.328Z",
+  "metrics": {
+    "totalRequests": 0,
+    "totalCost": 0,
+    "totalDuration": 0,
+    "providerStats": [],
+    "errorsByProvider": [],
+    "costByProvider": [],
+    "requestsByHour": [],
+    "averageResponseTime": 0,
+    "peakConcurrentSessions": 0,
+    "currentConcurrentSessions": 0
+  }
+}
