@@ -12,7 +12,7 @@ const __dirname = path.dirname(__filename);
 
 export class AnalyticsTracker {
     constructor(options = {}) {
-        this.analyticsFile = path.join(__dirname, 'voice-analytics.json');
+        this.analyticsFile = path.join(__dirname, '../../data/voice-analytics.json');
         this.sessionStart = new Date();
         this.flushInterval = options.flushInterval || 60000; // 1 minute
         this.maxMemoryEntries = options.maxMemoryEntries || 1000;

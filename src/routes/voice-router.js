@@ -3,9 +3,9 @@
  * Supports Bring Your Own Key (BYOK) for multiple voice providers
  */
 
-import { VOICE_PROVIDERS } from './voice-providers-config.js';
+import { VOICE_PROVIDERS } from '../config/voice-providers-config.js';
 import { WebSocket } from 'ws';
-import { VoiceErrorHandler, VoiceError } from './error-handler.js';
+import { VoiceErrorHandler, VoiceError } from '../utils/error-handler.js';
 
 export class VoiceRouter {
     constructor(options = {}) {

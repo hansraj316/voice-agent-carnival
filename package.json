@@ -2,14 +2,14 @@
   "name": "voice-echo-agent",
   "version": "1.0.0",
   "description": "A voice agent that echoes what you say using OpenAI Realtime API",
-  "main": "server.js",
+  "main": "src/core/server.js",
   "type": "module",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js",
+    "start": "node src/core/server.js",
+    "dev": "node --watch src/core/server.js",
     "setup": "npm install && cp .env.example .env",
-    "validate": "node validate.js",
-    "test": "node --check server.js && echo 'Syntax check passed'"
+    "validate": "node scripts/validate.js",
+    "test": "node --check src/core/server.js && echo 'Syntax check passed'"
   },
   "dependencies": {
     "@elevenlabs/elevenlabs-js": "^2.14.0",

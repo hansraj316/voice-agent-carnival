@@ -4,9 +4,9 @@
  */
 
 import VoiceRouter from './voice-router.js';
-import { VOICE_PROVIDERS, PROVIDER_CATEGORIES } from './voice-providers-config.js';
-import ConfigManager from './config-manager.js';
-import AnalyticsTracker from './analytics-tracker.js';
+import { VOICE_PROVIDERS, PROVIDER_CATEGORIES } from '../config/voice-providers-config.js';
+import ConfigManager from '../config/config-manager.js';
+import AnalyticsTracker from '../services/analytics-tracker.js';
 
 export class VoiceAPIEndpoints {
     constructor(app) {

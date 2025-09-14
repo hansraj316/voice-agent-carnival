@@ -13,7 +13,7 @@ const __dirname = path.dirname(__filename);
 
 export class ConfigManager {
     constructor() {
-        this.configFile = path.join(__dirname, 'voice-config.json');
+        this.configFile = path.join(__dirname, '../../data/voice-config.json');
         this.encryptionKey = process.env.CONFIG_ENCRYPTION_KEY || this.generateKey();
         this.configs = new Map();
         this.defaultSettings = {

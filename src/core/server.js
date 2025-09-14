@@ -6,7 +6,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
-import { VoiceAPIEndpoints } from './voice-api-endpoints.js';
+import { VoiceAPIEndpoints } from '../routes/voice-api-endpoints.js';
 
 // Load environment variables
 dotenv.config();
@@ -42,7 +42,7 @@ class MultiModalVoiceServer {
     setupExpress() {
         this.app.use(cors());
         this.app.use(express.json());
-        this.app.use(express.static(path.join(__dirname, 'public')));
+        this.app.use(express.static(path.join(__dirname, '../../public')));
         
         this.app.get('/health', (req, res) => {
             res.json({ 
