@@ -16,6 +16,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 2. Ensure Node.js 18+ is installed
 3. Run `npm install` to install dependencies
 
+## MCP Servers
+- `context7` – available via `.claude/project.json`; it launches `npx -y @upstash/context7-mcp@latest` so the OpenAI documentation library is always pulled from the latest Context7 MCP release.
+
 ### Testing Commands
 - `npm test` - Syntax validation of main server file
 - `npm run validate` - Environment and dependency validation
