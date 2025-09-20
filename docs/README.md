@@ -13,11 +13,13 @@ A real-time voice agent that echoes what you say using OpenAI's Realtime API wit
 
 ## 🛠 Technologies Used
 
-- **Backend**: Node.js, Express, Direct OpenAI Realtime API
-- **Frontend**: Vanilla JavaScript, ES6 Modules, WebRTC/WebSocket clients
-- **AI**: OpenAI GPT-4o Realtime API (gpt-4o-realtime-preview-2024-12-17)
+- **Backend**: Node.js, Express, Direct OpenAI Realtime API, Multi-provider Voice Router
+- **Frontend**: Vanilla JavaScript, ES6 Modules, WebRTC/WebSocket clients, Voice Router UI
+- **AI**: OpenAI GPT-4o Realtime API + 25+ voice providers (STT, TTS, Conversational, Hybrid)
 - **Connections**: WebSocket proxy, WebRTC direct, SIP integration support
 - **Audio**: PCM16 format at 24kHz with Web Audio API and native WebRTC
+- **Security**: AES-256-CBC encryption, BYOK architecture, ephemeral tokens
+- **Analytics**: Real-time cost tracking, usage monitoring, performance metrics
 
 ## 🚀 Quick Start
 
@@ -52,7 +54,11 @@ A real-time voice agent that echoes what you say using OpenAI's Realtime API wit
 
 4. **Open in browser**:
    ```
+   # Echo Agent (Original Voice Interface)
    http://localhost:3000
+   
+   # Voice API Router (OpenRouter-style Multi-provider API)
+   http://localhost:3000/voice-router
    ```
 
 ### Getting OpenAI API Key

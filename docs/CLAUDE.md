@@ -27,56 +27,86 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Architecture Overview
 
-This is a multi-modal voice intelligence platform with dual architecture:
-1. **Echo Agent**: Direct WebSocket/WebRTC integration with OpenAI Realtime API
-2. **Voice API Router**: OpenRouter-style unified API for multiple voice providers with BYOK support
+This is a sophisticated dual-architecture voice AI platform that combines:
+1. **Echo Agent**: Direct real-time voice interaction via WebSocket/WebRTC with OpenAI Realtime API
+2. **Voice API Router**: OpenRouter-style unified HTTP API for 25+ voice providers with BYOK support
 
 ### Core Architecture Patterns
 
 **Dual Server Architecture**
-The system runs two complementary services:
-- Primary echo agent server with WebSocket proxy to OpenAI
-- Voice API Router providing OpenRouter-style endpoints for multiple providers
+Single Node.js server instance hosting two distinct but complementary services:
+- Real-time Echo Agent with WebSocket session management
+- HTTP-based Voice API Router with multi-provider abstraction
+- Shared configuration, analytics, and error handling infrastructure
 
 **Real-time Communication Layer**
-- WebSocket proxy pattern for server-side API key management
-- Direct WebRTC for low-latency browser-to-OpenAI connections
-- SIP integration support for telephony systems
+- **WebSocket Proxy**: Server-side API key management with OpenAI Realtime API
+- **WebRTC Direct**: Low-latency browser-to-OpenAI connections with ephemeral tokens
+- **SIP Integration**: Telephony system support for enterprise voice applications
 
 **Provider Abstraction Pattern**
-The `VoiceRouter` class abstracts multiple voice providers (OpenAI, ElevenLabs) behind a unified interface, enabling:
-- Provider-agnostic client code
-- Easy provider switching and fallbacks
-- Consistent error handling across providers
+The `VoiceRouter` class implements a unified interface across 25+ providers:
+- **Adapter Pattern**: Provider-specific implementations behind common interface
+- **Circuit Breaker**: Automatic provider isolation and fallback mechanisms  
+- **Cost Optimization**: Real-time cost tracking and provider selection
+- **Error Resilience**: Exponential backoff, retry logic, and health monitoring
+
+**Security Architecture**
+- **BYOK (Bring Your Own Key)**: User-provided API keys with AES-256-CBC encryption
+- **Session Management**: IP + User-Agent based identification without permanent storage
+- **Ephemeral Tokens**: WebRTC token generation for secure direct connections
+- **Configuration Encryption**: Secure storage of API keys and user settings
 
 ### Core Components
 
-**Server (`src/core/server.js`)**
-- `MultiModalVoiceServer` class with Express.js HTTP server
-- Integrates both echo agent and Voice API Router functionality
-- WebSocket proxy to OpenAI Realtime API
-- Serves static frontend files and API endpoints
+**Server Core (`src/core/server.js`)**
+- `MultiModalVoiceServer`: Main server orchestration with Express.js + WebSocket support
+- `WebSocketSessionHandler`: Real-time voice session management for Echo Agent
+- Dual service hosting: Echo Agent + Voice API Router
+- ElevenLabs TTS integration and ephemeral token generation
+- Static file serving and health monitoring endpoints
 
-**Voice API Router (`src/routes/voice-router.js`)**
-- Universal voice provider abstraction layer
-- Supports OpenAI Realtime, ElevenLabs TTS, and future providers
-- Implements circuit breaker pattern for error resilience
-- BYOK (Bring Your Own Key) architecture for security
+**Voice API Router (`src/routes/voice-api-endpoints.js`)**
+- `VoiceAPIEndpoints`: OpenRouter-style RESTful API implementation
+- 25+ voice provider support (STT, TTS, Real-time, Conversational, Hybrid)
+- Model discovery, provider enumeration, and capability detection
+- Speech-to-text, text-to-speech, and conversational endpoints
+- Real-time session creation and user configuration management
+
+**Voice Router Core (`src/routes/voice-router.js`)**
+- `VoiceRouter`: Universal provider abstraction and request routing
+- Adapter pattern implementation for consistent provider interface
+- Usage tracking, statistics, and provider validation
+- Error handling integration and fallback support
+- BYOK architecture with encrypted API key management
+
+**Provider Configuration (`src/config/voice-providers-config.js`)**
+- Comprehensive registry of 25+ voice providers
+- Provider metadata, capabilities, and pricing models
+- Support for real-time, STT, TTS, conversational, and hybrid providers
+- Authentication methods and endpoint configuration
+- Latency indicators and feature comparisons
 
 **Configuration Management (`src/config/config-manager.js`)**
-- Encrypted storage of API keys and provider settings
-- Dynamic configuration loading and updates
-- Secure key management with environment variable fallbacks
+- `ConfigManager`: Secure API key and user configuration management
+- AES-256-CBC encryption for sensitive data storage
+- User session management via IP + User-Agent hashing
+- Provider configuration persistence and settings management
+- Configuration export/import and automatic cleanup
 
-**Analytics & Tracking (`src/services/analytics-tracker.js`)**
-- Real-time usage and cost tracking across all providers
-- Session management and performance metrics
-- Persistent analytics data in JSON format
+**Analytics & Cost Tracking (`src/services/analytics-tracker.js`)**
+- `AnalyticsTracker`: Comprehensive usage analytics and cost calculation
+- Multi-provider cost models (per-minute, per-character, per-hour, usage-based)
+- Real-time session tracking and performance metrics collection
+- Error rate monitoring and cost projection
+- Hourly/daily/weekly/monthly reporting with budget tracking
 
-**Error Handling (`src/utils/error-handler.js`)**
-- Centralized error handling with provider-specific strategies
-- Circuit breaker pattern implementation
-- Automatic retry logic with exponential backoff
+**Error Handling & Resilience (`src/utils/error-handler.js`)**
+- `VoiceErrorHandler`: Circuit breaker pattern with exponential backoff
+- Provider fallback mechanisms and error categorization
+- System health monitoring and automatic recovery
+- Three-state circuit breaker (CLOSED, OPEN, HALF_OPEN)
+- Comprehensive error tracking and resilience strategies
 
 ### Data Flow Architecture
 
@@ -143,13 +173,17 @@ Analytics ← ← ← ← Response ← ← ← ← Provider Response
 - Max Response Tokens: 4096
 
 **Voice API Router Endpoints**
-- `/v1/voice/models` - List available models across providers
-- `/v1/voice/providers` - List configured voice providers
-- `/v1/voice/transcribe` - Speech-to-text across providers
-- `/v1/voice/synthesize` - Text-to-speech across providers
-- `/v1/voice/chat` - Conversational voice interactions
-- `/v1/voice/analytics` - Usage and cost analytics
-- `/v1/voice/config/provider` - Provider configuration management
+- `/v1/voice/models` - List available models across all providers with capabilities
+- `/v1/voice/providers` - Provider discovery with real-time health status
+- `/v1/voice/transcribe` - Speech-to-text across 8+ STT providers
+- `/v1/voice/synthesize` - Text-to-speech across 10+ TTS providers  
+- `/v1/voice/chat` - Conversational voice interactions with context management
+- `/v1/voice/realtime/session` - Real-time voice session creation with provider selection
+- `/v1/voice/analytics` - Comprehensive usage analytics and performance metrics
+- `/v1/voice/cost-report` - Detailed cost analysis across all providers
+- `/v1/voice/usage` - Real-time usage tracking and rate limiting
+- `/v1/voice/config/provider` - Encrypted provider configuration management
+- `/v1/voice/health` - System health monitoring and provider status
 
 ### Dependencies
 - `express` - Web server framework
