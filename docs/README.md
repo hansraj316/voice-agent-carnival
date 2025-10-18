@@ -11,7 +11,7 @@ A real-time voice agent that echoes what you say using OpenAI's Realtime API wit
 - **WebRTC Support**: Direct browser-to-OpenAI connection with lowest latency
 - **Production Ready**: Ephemeral tokens, proper error handling, and security best practices
 
-## 🛠 Technologies Used
+## 🛠 Technologies Used 
 
 - **Backend**: Node.js, Express, Direct OpenAI Realtime API, Multi-provider Voice Router
 - **Frontend**: Vanilla JavaScript, ES6 Modules, WebRTC/WebSocket clients, Voice Router UI
