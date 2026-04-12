@@ -1,5 +1,8 @@
 # 🎤 Multi-Modal Voice Echo Agent
 
+[![Indian Avengers](https://img.shields.io/badge/Managed%20By-Indian%20Avengers-orange?style=flat-square&logo=gitbook)](https://github.com/hansraj316/mission-control-openclaw)
+[![OpenAI Realtime](https://img.shields.io/badge/OpenAI-Realtime%20API-412991?style=flat-square&logo=openai&logoColor=white)](https://platform.openai.com/docs/guides/realtime-websocket)
+
 A real-time voice agent that echoes what you say using OpenAI's Realtime API with support for all three connection types: WebSocket, WebRTC, and SIP. Built with the official OpenAI Realtime API and GPT-4o model.
 
 ## ✨ Features
