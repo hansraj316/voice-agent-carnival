@@ -7,6 +7,7 @@ import VoiceRouter from './voice-router.js';
 import { VOICE_PROVIDERS, PROVIDER_CATEGORIES } from '../config/voice-providers-config.js';
 import ConfigManager from '../config/config-manager.js';
 import AnalyticsTracker from '../services/analytics-tracker.js';
+import SalesCallWorkflowService from '../services/sales-call-workflow.js';
 
 export class VoiceAPIEndpoints {
     constructor(app) {
@@ -14,6 +15,7 @@ export class VoiceAPIEndpoints {
         this.voiceRouter = new VoiceRouter();
         this.configManager = new ConfigManager();
         this.analyticsTracker = new AnalyticsTracker();
+        this.salesCallWorkflow = new SalesCallWorkflowService();
         this.init();
     }
 
@@ -31,6 +33,7 @@ export class VoiceAPIEndpoints {
         
         // Voice Processing Endpoints (OpenRouter-style)
         this.app.post('/v1/voice/transcribe', this.transcribe.bind(this));
+        this.app.post('/v1/voice/workflows/sales-call-to-crm', this.salesCallToCrm.bind(this));
         this.app.post('/v1/voice/synthesize', this.synthesize.bind(this));
         this.app.post('/v1/voice/chat', this.chat.bind(this));
         
@@ -309,6 +312,76 @@ export class VoiceAPIEndpoints {
             res.status(500).json({ 
                 error: error.message,
                 type: 'synthesis_error'
+            });
+        }
+    }
+
+    /**
+     * Demo workflow: Grok STT transcript -> sales summary -> CRM payload
+     * POST /v1/voice/workflows/sales-call-to-crm
+     */
+    async salesCallToCrm(req, res) {
+        try {
+            const {
+                api_key,
+                model,
+                audio_file,
+                audio_url,
+                language = 'en',
+                options = {}
+            } = req.body;
+
+            if (!api_key) {
+                return res.status(400).json({
+                    error: 'api_key is required for xAI Grok STT'
+                });
+            }
+
+            if (!audio_file && !audio_url) {
+                return res.status(400).json({
+                    error: 'Either audio_file or audio_url is required'
+                });
+            }
+
+            const adapter = await this.voiceRouter.routeRequest({
+                provider: 'xai-grok-stt',
+                apiKey: api_key,
+                type: 'stt',
+                options: { model, language, ...options }
+            });
+
+            await adapter.connect();
+
+            let transcription;
+            if (audio_file) {
+                const audioBuffer = Buffer.from(audio_file, 'base64');
+                transcription = await adapter.process(audioBuffer, options);
+            } else {
+                const response = await fetch(audio_url);
+                const audioBuffer = await response.arrayBuffer();
+                transcription = await adapter.process(audioBuffer, options);
+            }
+
+            await adapter.disconnect();
+
+            const transcript = transcription.text || transcription.transcript || '';
+            const extracted = this.salesCallWorkflow.extractDealFields(transcript);
+            const crmPayload = this.salesCallWorkflow.buildCrmPayload(extracted, transcript);
+
+            res.json({
+                object: 'workflow_result',
+                workflow: 'sales-call-to-crm',
+                provider: 'xai-grok-stt',
+                model: model || 'grok-2-vision-audio-preview',
+                transcript,
+                extracted,
+                crm_payload: crmPayload
+            });
+        } catch (error) {
+            console.error('Sales call workflow error:', error);
+            res.status(500).json({
+                error: error.message,
+                type: 'sales_call_workflow_error'
             });
         }
     }

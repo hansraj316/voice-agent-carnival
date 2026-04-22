@@ -68,6 +68,7 @@ export class VoiceRouter {
             'deepgram': DeepgramAdapter,
             'assemblyai': AssemblyAIAdapter,
             'whisper': WhisperAdapter,
+            'xai-grok-stt': XaiGrokSTTAdapter,
             'elevenlabs': ElevenLabsAdapter,
             'playht': PlayHTAdapter,
             'google-stt': GoogleSTTAdapter,
@@ -431,6 +432,51 @@ class WhisperAdapter extends BaseAdapter {
         }
 
         return await response.json();
+    }
+}
+
+/**
+ * xAI Grok Speech-to-Text Adapter (file-based)
+ */
+class XaiGrokSTTAdapter extends BaseAdapter {
+    async connect() {
+        this.isConnected = true;
+    }
+
+    async process(audioInput, options = {}) {
+        const formData = new FormData();
+        const model = options.model || 'grok-2-vision-audio-preview';
+        const language = options.language || 'en';
+        const filename = options.filename || 'sales-call.wav';
+        const mimeType = options.mimeType || 'audio/wav';
+
+        const audioBlob = audioInput instanceof Blob
+            ? audioInput
+            : new Blob([audioInput], { type: mimeType });
+
+        formData.append('file', audioBlob, filename);
+        formData.append('model', model);
+        formData.append('language', language);
+        formData.append('response_format', options.format || 'json');
+
+        const response = await fetch(this.config.endpoint, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${this.apiKey}`
+            },
+            body: formData
+        });
+
+        if (!response.ok) {
+            const error = await response.text();
+            throw new Error(`xAI Grok STT API error: ${error}`);
+        }
+
+        const result = await response.json();
+        return {
+            text: result.text || result.transcript || '',
+            raw: result
+        };
     }
 }
 

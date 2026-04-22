@@ -77,6 +77,23 @@ export const VOICE_PROVIDERS = {
     }
   },
 
+  'xai-grok-stt': {
+    name: 'xAI Grok Speech-to-Text',
+    type: 'stt',
+    capabilities: ['speech-to-text', 'pre-recorded'],
+    latency: '~1-4s',
+    pricing: 'Usage-based (see xAI pricing)',
+    models: ['grok-2-vision-audio-preview'],
+    auth: 'bearer',
+    endpoint: 'https://api.x.ai/v1/audio/transcriptions',
+    features: {
+      streaming: false,
+      punctuation: true,
+      languageDetection: true,
+      languages: ['en', 'multi-language (provider-dependent)']
+    }
+  },
+
   'google-stt': {
     name: 'Google Cloud Speech-to-Text',
     type: 'stt',
@@ -263,7 +280,7 @@ export const VOICE_PROVIDERS = {
 
 export const PROVIDER_CATEGORIES = {
   'Real-time Speech-to-Speech': ['openai-realtime', 'elevenlabs-conversational'],
-  'Speech-to-Text': ['deepgram', 'assemblyai', 'whisper', 'google-stt', 'azure-stt'],
+  'Speech-to-Text': ['deepgram', 'assemblyai', 'whisper', 'xai-grok-stt', 'google-stt', 'azure-stt'],
   'Text-to-Speech': ['elevenlabs', 'playht', 'google-tts', 'azure-tts', 'amazon-polly', 'murf'],
   'Enterprise/Hybrid': ['ibm-watson', 'azure-stt', 'google-stt']
 };
