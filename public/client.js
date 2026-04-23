@@ -9,6 +9,8 @@ class MultiModalVoiceClient {
         this.isConnected = false;
         this.isListening = false;
         this.processor = null;
+        this.transcriptHistory = [];
+        this.trialUrl = `${window.location.origin}/voice-router`;
         
         this.initializeElements();
         this.setupEventListeners();
@@ -26,6 +28,10 @@ class MultiModalVoiceClient {
         this.disconnectBtn = document.getElementById('disconnectBtn');
         this.logEl = document.getElementById('log');
         this.connectionInfo = document.getElementById('connectionInfo');
+        this.shareCardTextEl = document.getElementById('shareCardText');
+        this.shareToXBtn = document.getElementById('shareToXBtn');
+        this.copyShareBtn = document.getElementById('copyShareBtn');
+        this.startTrialBtn = document.getElementById('startTrialBtn');
     }
     
     setupEventListeners() {
@@ -46,10 +52,50 @@ class MultiModalVoiceClient {
         this.connectBtn.addEventListener('click', () => this.connect());
         this.micBtn.addEventListener('click', () => this.toggleListening());
         this.disconnectBtn.addEventListener('click', () => this.disconnect());
+        this.shareToXBtn.addEventListener('click', () => this.shareOnX());
+        this.copyShareBtn.addEventListener('click', () => this.copyShareCard());
+        this.startTrialBtn.addEventListener('click', () => this.startTrial());
         
         // Initialize connection info and voice options
         this.updateConnectionInfo();
         this.updateVoiceOptions();
+        this.renderShareCard();
+    }
+
+    getShareCardText() {
+        const latest = this.transcriptHistory[this.transcriptHistory.length - 1];
+        if (!latest) {
+            return 'Say something with the mic, then your auto-generated share card appears here.';
+        }
+
+        const quoted = latest.length > 120 ? `${latest.slice(0, 117)}...` : latest;
+        return `I just tested Voice Echo Agent. It replied in real time and mirrored: "${quoted}"\n\nTry it free: ${this.trialUrl}`;
+    }
+
+    renderShareCard() {
+        this.shareCardTextEl.textContent = this.getShareCardText();
+    }
+
+    shareOnX() {
+        const text = this.getShareCardText();
+        const intentUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
+        window.open(intentUrl, '_blank', 'noopener,noreferrer');
+        this.log('Opened X share intent');
+    }
+
+    async copyShareCard() {
+        const text = this.getShareCardText();
+        try {
+            await navigator.clipboard.writeText(text);
+            this.log('Share card copied to clipboard', 'success');
+        } catch (error) {
+            this.log(`Failed to copy share card: ${error.message}`, 'error');
+        }
+    }
+
+    startTrial() {
+        window.open(this.trialUrl, '_blank', 'noopener,noreferrer');
+        this.log('Opened trial page CTA', 'success');
     }
     
     initializeConnectionHandlers() {
@@ -409,6 +455,10 @@ class WebSocketHandler {
                 break;
             case 'transcript_input':
                 this.client.log(`You said: "${message.transcript}"`);
+                if (message.transcript) {
+                    this.client.transcriptHistory.push(message.transcript);
+                    this.client.renderShareCard();
+                }
                 
                 // Use ElevenLabs TTS if selected
                 if (this.client.voiceProvider === 'elevenlabs' && message.transcript) {

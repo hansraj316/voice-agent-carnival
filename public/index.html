@@ -327,6 +327,50 @@
             margin-top: 2.5rem;
         }
 
+        .growth-card {
+            margin-top: 1.5rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            padding: 1.25rem;
+        }
+
+        .growth-title {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 0.35rem;
+        }
+
+        .growth-subtitle {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            margin-bottom: 0.9rem;
+        }
+
+        .share-card {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 10px;
+            padding: 0.9rem;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            margin-bottom: 0.9rem;
+            min-height: 72px;
+        }
+
+        .growth-actions {
+            display: flex;
+            gap: 0.65rem;
+            flex-wrap: wrap;
+        }
+
+        .growth-actions button {
+            min-width: 0;
+            font-size: 0.82rem;
+            padding: 0.65rem 0.9rem;
+        }
+
         .log-header {
             font-size: 0.875rem;
             font-weight: 600;
@@ -466,6 +510,17 @@
             <button id="connectBtn" class="primary">Connect</button>
             <button class="mic-button" id="micBtn" disabled>🎤</button>
             <button id="disconnectBtn" disabled>Disconnect</button>
+        </div>
+
+        <div class="growth-card">
+            <div class="growth-title">🚀 Growth loop: share your result on X</div>
+            <div class="growth-subtitle">Turn your first good moment into social proof and a fast trial CTA.</div>
+            <div class="share-card" id="shareCardText">Say something with the mic, then your auto-generated share card appears here.</div>
+            <div class="growth-actions">
+                <button id="shareToXBtn" class="primary">Share on X</button>
+                <button id="copyShareBtn">Copy share card</button>
+                <button id="startTrialBtn">Start free trial</button>
+            </div>
         </div>
         
         <div class="log-container">
