@@ -10,26 +10,36 @@ export class VoiceErrorHandler {
         this.fallbackProviders = options.fallbackProviders || [];
         this.circuitBreakerThreshold = options.circuitBreakerThreshold || 5;
         this.circuitBreakerTimeout = options.circuitBreakerTimeout || 30000;
-        
+
         // Circuit breaker state per provider
         this.circuitBreakers = new Map();
-        
+
         // Error statistics
         this.errorStats = new Map();
-        
+
         this.initializeCircuitBreakers();
     }
 
     initializeCircuitBreakers() {
         // Initialize circuit breaker for each provider
         const providers = [
-            'openai-realtime', 'deepgram', 'assemblyai', 'whisper',
-            'elevenlabs', 'playht', 'google-stt', 'google-tts',
-            'azure-stt', 'azure-tts', 'amazon-polly', 'murf',
-            'elevenlabs-conversational', 'ibm-watson'
+            'openai-realtime',
+            'deepgram',
+            'assemblyai',
+            'whisper',
+            'elevenlabs',
+            'playht',
+            'google-stt',
+            'google-tts',
+            'azure-stt',
+            'azure-tts',
+            'amazon-polly',
+            'murf',
+            'elevenlabs-conversational',
+            'ibm-watson'
         ];
 
-        providers.forEach(provider => {
+        providers.forEach((provider) => {
             this.circuitBreakers.set(provider, {
                 state: 'CLOSED', // CLOSED, OPEN, HALF_OPEN
                 failures: 0,
@@ -79,13 +89,12 @@ export class VoiceErrorHandler {
         for (attempt = 0; attempt <= retries; attempt++) {
             try {
                 this.recordRequest(provider);
-                
+
                 const result = await this.executeWithTimeout(operation, timeout);
-                
+
                 // Success - reset circuit breaker
                 this.recordSuccess(provider, Date.now() - startTime);
                 return result;
-
             } catch (error) {
                 lastError = this.createVoiceError(error, provider, attempt);
                 this.recordError(provider, lastError, Date.now() - startTime);
@@ -113,18 +122,17 @@ export class VoiceErrorHandler {
 
             try {
                 console.log(`🔄 Falling back to provider: ${fallbackProvider}`);
-                
+
                 this.recordRequest(fallbackProvider);
                 const result = await this.executeWithTimeout(operation, timeout);
-                
+
                 this.recordSuccess(fallbackProvider, Date.now() - startTime);
                 return result;
-
             } catch (error) {
                 const fallbackError = this.createVoiceError(error, fallbackProvider, 0);
                 this.recordError(fallbackProvider, fallbackError, Date.now() - startTime);
                 this.updateCircuitBreaker(fallbackProvider, fallbackError);
-                
+
                 console.log(`❌ Fallback provider ${fallbackProvider} also failed:`, error.message);
             }
         }
@@ -152,11 +160,11 @@ export class VoiceErrorHandler {
             }, timeout);
 
             Promise.resolve(operation())
-                .then(result => {
+                .then((result) => {
                     clearTimeout(timer);
                     resolve(result);
                 })
-                .catch(error => {
+                .catch((error) => {
                     clearTimeout(timer);
                     reject(error);
                 });
@@ -173,7 +181,7 @@ export class VoiceErrorHandler {
         switch (breaker.state) {
             case 'CLOSED':
                 return true;
-            
+
             case 'OPEN':
                 // Check if we should try half-open
                 if (Date.now() >= breaker.nextAttemptTime) {
@@ -181,10 +189,10 @@ export class VoiceErrorHandler {
                     return true;
                 }
                 return false;
-            
+
             case 'HALF_OPEN':
                 return true;
-            
+
             default:
                 return true;
         }
@@ -204,13 +212,15 @@ export class VoiceErrorHandler {
         if (breaker.failures >= this.circuitBreakerThreshold && breaker.state === 'CLOSED') {
             breaker.state = 'OPEN';
             breaker.nextAttemptTime = Date.now() + this.circuitBreakerTimeout;
-            
-            console.log(`🚨 Circuit breaker OPENED for provider: ${provider} (${breaker.failures} failures)`);
+
+            console.log(
+                `🚨 Circuit breaker OPENED for provider: ${provider} (${breaker.failures} failures)`
+            );
         } else if (breaker.state === 'HALF_OPEN') {
             // Half-open failed, go back to open
             breaker.state = 'OPEN';
             breaker.nextAttemptTime = Date.now() + this.circuitBreakerTimeout;
-            
+
             console.log(`🚨 Circuit breaker back to OPEN for provider: ${provider}`);
         }
     }
@@ -222,7 +232,7 @@ export class VoiceErrorHandler {
         const breaker = this.circuitBreakers.get(provider);
         if (breaker) {
             breaker.failures = 0;
-            
+
             if (breaker.state === 'HALF_OPEN') {
                 breaker.state = 'CLOSED';
                 console.log(`✅ Circuit breaker CLOSED for provider: ${provider}`);
@@ -260,7 +270,7 @@ export class VoiceErrorHandler {
                 timestamp: new Date().toISOString()
             };
             stats.errorRate = stats.totalErrors / stats.totalRequests;
-            
+
             // Track error types
             const errorType = error.type || 'UNKNOWN';
             stats.errorTypes[errorType] = (stats.errorTypes[errorType] || 0) + 1;
@@ -292,7 +302,11 @@ export class VoiceErrorHandler {
             isRetryable = false;
         } else if (error.message.includes('429') || error.message.includes('rate limit')) {
             type = 'RATE_LIMIT_ERROR';
-        } else if (error.message.includes('500') || error.message.includes('502') || error.message.includes('503')) {
+        } else if (
+            error.message.includes('500') ||
+            error.message.includes('502') ||
+            error.message.includes('503')
+        ) {
             type = 'SERVER_ERROR';
         } else if (error.message.includes('ENOTFOUND') || error.message.includes('ECONNREFUSED')) {
             type = 'NETWORK_ERROR';
@@ -314,11 +328,11 @@ export class VoiceErrorHandler {
     calculateRetryDelay(attempt) {
         const baseDelay = this.retryDelay;
         const maxDelay = 30000; // 30 seconds max
-        
+
         // Exponential backoff with jitter
         const exponentialDelay = baseDelay * Math.pow(2, attempt);
         const jitter = Math.random() * 1000;
-        
+
         return Math.min(exponentialDelay + jitter, maxDelay);
     }
 
@@ -326,7 +340,7 @@ export class VoiceErrorHandler {
      * Delay utility
      */
     delay(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
+        return new Promise((resolve) => setTimeout(resolve, ms));
     }
 
     /**
@@ -362,7 +376,7 @@ export class VoiceErrorHandler {
             breaker.failures = 0;
             breaker.lastFailureTime = null;
             breaker.nextAttemptTime = null;
-            
+
             console.log(`🔄 Circuit breaker manually reset for provider: ${provider}`);
         }
     }
@@ -384,7 +398,7 @@ export class VoiceErrorHandler {
 
         for (const [provider, stats] of this.errorStats) {
             const breaker = this.circuitBreakers.get(provider);
-            
+
             let providerStatus = 'healthy';
             if (breaker.state === 'OPEN') {
                 providerStatus = 'down';
@@ -411,17 +425,57 @@ export class VoiceErrorHandler {
         health.globalErrorRate = totalRequests > 0 ? totalErrors / totalRequests : 0;
 
         // Determine overall system status
-        const downProviders = Object.values(health.providers).filter(p => p.status === 'down').length;
-        const degradedProviders = Object.values(health.providers).filter(p => p.status === 'degraded').length;
+        const downProviders = Object.values(health.providers).filter(
+            (p) => p.status === 'down'
+        ).length;
+        const degradedProviders = Object.values(health.providers).filter(
+            (p) => p.status === 'degraded'
+        ).length;
 
         if (downProviders > Object.keys(health.providers).length / 2) {
             health.status = 'critical';
-        } else if (downProviders > 0 || degradedProviders > Object.keys(health.providers).length / 3) {
+        } else if (
+            downProviders > 0 ||
+            degradedProviders > Object.keys(health.providers).length / 3
+        ) {
             health.status = 'degraded';
         }
 
         return health;
     }
+}
+
+/**
+ * Redact sensitive credentials from an object before logging.
+ * Strips api_key / apiKey / Authorization-style fields (case-insensitive)
+ * recursively, returning a shallow-cloned, safe-to-log copy. Non-object
+ * values are returned unchanged.
+ * @param {*} input - Object (e.g. request body / headers) to sanitize
+ * @returns {*} Redacted copy
+ */
+export function redact(input) {
+    if (Array.isArray(input)) {
+        return input.map((item) => redact(item));
+    }
+
+    if (input === null || typeof input !== 'object') {
+        return input;
+    }
+
+    const SENSITIVE = /(api[-_]?key|authorization|x-api-key|secret|password|token)/i;
+    const result = {};
+
+    for (const [key, value] of Object.entries(input)) {
+        if (SENSITIVE.test(key)) {
+            result[key] = '[REDACTED]';
+        } else if (value && typeof value === 'object') {
+            result[key] = redact(value);
+        } else {
+            result[key] = value;
+        }
+    }
+
+    return result;
 }
 
 /**

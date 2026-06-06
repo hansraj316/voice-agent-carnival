@@ -54,7 +54,7 @@ export class ConfigManager {
         }
 
         const userConfig = this.configs.get(userId);
-        
+
         // Encrypt sensitive data
         const encryptedConfig = {
             ...config,
@@ -64,7 +64,7 @@ export class ConfigManager {
 
         userConfig.providers[provider] = encryptedConfig;
         userConfig.lastUsed = new Date().toISOString();
-        
+
         this.configs.set(userId, userConfig);
         await this.saveConfigurations();
 
@@ -83,7 +83,7 @@ export class ConfigManager {
         }
 
         const config = userConfig.providers[provider];
-        
+
         // Decrypt sensitive data
         if (config.encrypted && config.apiKey) {
             return {
@@ -106,7 +106,7 @@ export class ConfigManager {
             return [];
         }
 
-        return Object.keys(userConfig.providers).map(provider => ({
+        return Object.keys(userConfig.providers).map((provider) => ({
             provider,
             configured: true,
             lastUsed: userConfig.lastUsed,
@@ -132,7 +132,7 @@ export class ConfigManager {
         const userConfig = this.configs.get(userId);
         userConfig.settings = { ...userConfig.settings, ...settings };
         userConfig.lastUsed = new Date().toISOString();
-        
+
         this.configs.set(userId, userConfig);
         await this.saveConfigurations();
 
@@ -161,7 +161,7 @@ export class ConfigManager {
 
         delete userConfig.providers[provider];
         userConfig.lastUsed = new Date().toISOString();
-        
+
         this.configs.set(userId, userConfig);
         await this.saveConfigurations();
 
@@ -194,7 +194,7 @@ export class ConfigManager {
             const providers = Object.keys(config.providers);
             stats.totalProviders += providers.length;
 
-            providers.forEach(provider => {
+            providers.forEach((provider) => {
                 stats.providerUsage[provider] = (stats.providerUsage[provider] || 0) + 1;
             });
 
@@ -218,10 +218,10 @@ export class ConfigManager {
         try {
             const data = await fs.readFile(this.configFile, 'utf8');
             const parsedData = JSON.parse(data);
-            
+
             // Convert plain object back to Map
             this.configs = new Map(Object.entries(parsedData.configs || {}));
-            
+
             console.log(`📂 Loaded ${this.configs.size} user configurations`);
         } catch (error) {
             if (error.code !== 'ENOENT') {
@@ -251,38 +251,62 @@ export class ConfigManager {
     }
 
     /**
-     * Encrypt sensitive data
+     * Derive a 32-byte AES-256 key from the configured encryption key.
+     * Uses scrypt with a fixed salt so the same key/passphrase always
+     * derives the same cipher key (required for round-trip decryption).
+     */
+    deriveKey() {
+        // Fixed, deterministic salt. The secret strength comes from
+        // this.encryptionKey; per-message uniqueness comes from the random IV.
+        const salt = 'voice-router-config-salt';
+        return crypto.scryptSync(this.encryptionKey, salt, 32);
+    }
+
+    /**
+     * Encrypt sensitive data.
+     * Uses AES-256-CBC via createCipheriv with a scrypt-derived key and a
+     * random per-message IV. The IV is stored alongside the ciphertext in
+     * the `iv:ciphertext` (hex) on-disk format.
      */
     encrypt(text) {
         if (!text) return null;
-        
+
+        const key = this.deriveKey();
         const iv = crypto.randomBytes(16);
-        const cipher = crypto.createCipher('aes-256-cbc', this.encryptionKey);
-        
+        const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
+
         let encrypted = cipher.update(text, 'utf8', 'hex');
         encrypted += cipher.final('hex');
-        
+
         return iv.toString('hex') + ':' + encrypted;
     }
 
     /**
-     * Decrypt sensitive data
+     * Decrypt sensitive data.
+     * Parses the stored IV from the `iv:ciphertext` format and uses
+     * createDecipheriv with the same scrypt-derived key. Input that is not
+     * in the expected encrypted format is returned unchanged (existing
+     * contract used to detect plaintext/legacy values).
      */
     decrypt(encryptedText) {
         if (!encryptedText) return null;
-        
+
         try {
             const parts = encryptedText.split(':');
             if (parts.length !== 2) return encryptedText; // Not encrypted
-            
+
             const iv = Buffer.from(parts[0], 'hex');
             const encrypted = parts[1];
-            
-            const decipher = crypto.createDecipher('aes-256-cbc', this.encryptionKey);
-            
+
+            // A valid IV is 16 bytes (32 hex chars); bail to raw value otherwise.
+            if (iv.length !== 16) return encryptedText;
+
+            const key = this.deriveKey();
+            const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+
             let decrypted = decipher.update(encrypted, 'hex', 'utf8');
             decrypted += decipher.final('utf8');
-            
+
             return decrypted;
         } catch (error) {
             console.error('❌ Decryption failed:', error);
@@ -295,7 +319,9 @@ export class ConfigManager {
      */
     generateKey() {
         const key = crypto.randomBytes(32).toString('hex');
-        console.log('🔑 Generated new encryption key. Set CONFIG_ENCRYPTION_KEY in .env for persistence.');
+        console.log(
+            '🔑 Generated new encryption key. Set CONFIG_ENCRYPTION_KEY in .env for persistence.'
+        );
         return key;
     }
 
@@ -305,11 +331,11 @@ export class ConfigManager {
     validateProviderConfig(provider, config) {
         const requiredFields = ['apiKey'];
         const optionalFields = ['model', 'voice', 'language', 'options'];
-        
+
         const errors = [];
-        
+
         // Check required fields
-        requiredFields.forEach(field => {
+        requiredFields.forEach((field) => {
             if (!config[field]) {
                 errors.push(`Missing required field: ${field}`);
             }

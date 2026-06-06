@@ -12,7 +12,7 @@ export class VoiceRouter {
         this.providers = VOICE_PROVIDERS;
         this.activeConnections = new Map();
         this.usage = new Map(); // Track usage per provider
-        
+
         // Initialize error handler
         this.errorHandler = new VoiceErrorHandler({
             maxRetries: options.maxRetries || 3,
@@ -35,7 +35,9 @@ export class VoiceRouter {
         const { provider, apiKey, options = {}, type } = config;
 
         if (!this.providers[provider]) {
-            throw new Error(`Provider "${provider}" not supported. Available providers: ${Object.keys(this.providers).join(', ')}`);
+            throw new Error(
+                `Provider "${provider}" not supported. Available providers: ${Object.keys(this.providers).join(', ')}`
+            );
         }
 
         if (!apiKey) {
@@ -46,7 +48,9 @@ export class VoiceRouter {
 
         // Validate provider supports requested type
         if (type && !providerConfig.capabilities.includes(type) && providerConfig.type !== type) {
-            throw new Error(`Provider "${provider}" does not support "${type}". Supported: ${providerConfig.capabilities.join(', ')}`);
+            throw new Error(
+                `Provider "${provider}" does not support "${type}". Supported: ${providerConfig.capabilities.join(', ')}`
+            );
         }
 
         // Create appropriate adapter based on provider
@@ -65,17 +69,17 @@ export class VoiceRouter {
     getAdapterClass(provider) {
         const adapterMap = {
             'openai-realtime': OpenAIRealtimeAdapter,
-            'deepgram': DeepgramAdapter,
-            'assemblyai': AssemblyAIAdapter,
-            'whisper': WhisperAdapter,
-            'elevenlabs': ElevenLabsAdapter,
-            'playht': PlayHTAdapter,
+            deepgram: DeepgramAdapter,
+            assemblyai: AssemblyAIAdapter,
+            whisper: WhisperAdapter,
+            elevenlabs: ElevenLabsAdapter,
+            playht: PlayHTAdapter,
             'google-stt': GoogleSTTAdapter,
             'google-tts': GoogleTTSAdapter,
             'azure-stt': AzureSTTAdapter,
             'azure-tts': AzureTTSAdapter,
             'amazon-polly': AmazonPollyAdapter,
-            'murf': MurfAdapter,
+            murf: MurfAdapter,
             'elevenlabs-conversational': ElevenLabsConversationalAdapter,
             'ibm-watson': IBMWatsonAdapter
         };
@@ -101,7 +105,7 @@ export class VoiceRouter {
         }
 
         const stats = this.usage.get(provider);
-        
+
         switch (action) {
             case 'request':
                 stats.requests++;
@@ -163,7 +167,7 @@ export class VoiceRouter {
      */
     async routeWithFallback(config) {
         const { provider, fallbackProviders = [], ...restConfig } = config;
-        
+
         return await this.errorHandler.executeWithFallback(
             () => this.routeRequest({ provider, ...restConfig }),
             {
@@ -240,10 +244,10 @@ class OpenAIRealtimeAdapter extends BaseAdapter {
     async connect() {
         return new Promise((resolve, reject) => {
             const url = `${this.config.endpoint}?model=${this.options.model || 'gpt-4o-realtime-preview-2024-12-17'}`;
-            
+
             this.websocket = new WebSocket(url, {
                 headers: {
-                    'Authorization': `Bearer ${this.apiKey}`,
+                    Authorization: `Bearer ${this.apiKey}`,
                     'OpenAI-Beta': 'realtime=v1'
                 }
             });
@@ -251,20 +255,23 @@ class OpenAIRealtimeAdapter extends BaseAdapter {
             this.websocket.on('open', () => {
                 this.isConnected = true;
                 // Send session configuration
-                this.websocket.send(JSON.stringify({
-                    type: 'session.update',
-                    session: {
-                        modalities: ['text', 'audio'],
-                        instructions: this.options.instructions || 'You are a helpful assistant.',
-                        voice: this.options.voice || 'alloy',
-                        input_audio_format: 'pcm16',
-                        output_audio_format: 'pcm16',
-                        input_audio_transcription: { model: 'whisper-1' },
-                        turn_detection: { type: 'server_vad', threshold: 0.5 },
-                        temperature: this.options.temperature || 0.6,
-                        max_response_output_tokens: this.options.max_tokens || 4096
-                    }
-                }));
+                this.websocket.send(
+                    JSON.stringify({
+                        type: 'session.update',
+                        session: {
+                            modalities: ['text', 'audio'],
+                            instructions:
+                                this.options.instructions || 'You are a helpful assistant.',
+                            voice: this.options.voice || 'alloy',
+                            input_audio_format: 'pcm16',
+                            output_audio_format: 'pcm16',
+                            input_audio_transcription: { model: 'whisper-1' },
+                            turn_detection: { type: 'server_vad', threshold: 0.5 },
+                            temperature: this.options.temperature || 0.6,
+                            max_response_output_tokens: this.options.max_tokens || 4096
+                        }
+                    })
+                );
                 resolve();
             });
 
@@ -307,11 +314,11 @@ class ElevenLabsAdapter extends BaseAdapter {
     async process(text, options = {}) {
         const voiceId = options.voice_id || 'pNInz6obpgDQGcFmaJgB'; // Default voice
         const model = options.model || 'eleven_multilingual_v2';
-        
+
         const response = await fetch(`${this.config.endpoint}/${voiceId}`, {
             method: 'POST',
             headers: {
-                'Accept': 'audio/mpeg',
+                Accept: 'audio/mpeg',
                 'Content-Type': 'application/json',
                 'xi-api-key': this.apiKey
             },
@@ -358,10 +365,10 @@ class DeepgramAdapter extends BaseAdapter {
             });
 
             const url = `${this.config.endpoint}?${params}`;
-            
+
             this.websocket = new WebSocket(url, {
                 headers: {
-                    'Authorization': `Token ${this.apiKey}`
+                    Authorization: `Token ${this.apiKey}`
                 }
             });
 
@@ -420,7 +427,7 @@ class WhisperAdapter extends BaseAdapter {
         const response = await fetch(this.config.endpoint, {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${this.apiKey}`
+                Authorization: `Bearer ${this.apiKey}`
             },
             body: formData
         });
@@ -436,53 +443,93 @@ class WhisperAdapter extends BaseAdapter {
 
 // Placeholder adapters for other providers (to be implemented)
 class AssemblyAIAdapter extends BaseAdapter {
-    async connect() { this.isConnected = true; }
-    async process(input) { throw new Error('AssemblyAI adapter not yet implemented'); }
+    async connect() {
+        this.isConnected = true;
+    }
+    async process(input) {
+        throw new Error('AssemblyAI adapter not yet implemented');
+    }
 }
 
 class PlayHTAdapter extends BaseAdapter {
-    async connect() { this.isConnected = true; }
-    async process(input) { throw new Error('PlayHT adapter not yet implemented'); }
+    async connect() {
+        this.isConnected = true;
+    }
+    async process(input) {
+        throw new Error('PlayHT adapter not yet implemented');
+    }
 }
 
 class GoogleSTTAdapter extends BaseAdapter {
-    async connect() { this.isConnected = true; }
-    async process(input) { throw new Error('Google STT adapter not yet implemented'); }
+    async connect() {
+        this.isConnected = true;
+    }
+    async process(input) {
+        throw new Error('Google STT adapter not yet implemented');
+    }
 }
 
 class GoogleTTSAdapter extends BaseAdapter {
-    async connect() { this.isConnected = true; }
-    async process(input) { throw new Error('Google TTS adapter not yet implemented'); }
+    async connect() {
+        this.isConnected = true;
+    }
+    async process(input) {
+        throw new Error('Google TTS adapter not yet implemented');
+    }
 }
 
 class AzureSTTAdapter extends BaseAdapter {
-    async connect() { this.isConnected = true; }
-    async process(input) { throw new Error('Azure STT adapter not yet implemented'); }
+    async connect() {
+        this.isConnected = true;
+    }
+    async process(input) {
+        throw new Error('Azure STT adapter not yet implemented');
+    }
 }
 
 class AzureTTSAdapter extends BaseAdapter {
-    async connect() { this.isConnected = true; }
-    async process(input) { throw new Error('Azure TTS adapter not yet implemented'); }
+    async connect() {
+        this.isConnected = true;
+    }
+    async process(input) {
+        throw new Error('Azure TTS adapter not yet implemented');
+    }
 }
 
 class AmazonPollyAdapter extends BaseAdapter {
-    async connect() { this.isConnected = true; }
-    async process(input) { throw new Error('Amazon Polly adapter not yet implemented'); }
+    async connect() {
+        this.isConnected = true;
+    }
+    async process(input) {
+        throw new Error('Amazon Polly adapter not yet implemented');
+    }
 }
 
 class MurfAdapter extends BaseAdapter {
-    async connect() { this.isConnected = true; }
-    async process(input) { throw new Error('Murf adapter not yet implemented'); }
+    async connect() {
+        this.isConnected = true;
+    }
+    async process(input) {
+        throw new Error('Murf adapter not yet implemented');
+    }
 }
 
 class ElevenLabsConversationalAdapter extends BaseAdapter {
-    async connect() { this.isConnected = true; }
-    async process(input) { throw new Error('ElevenLabs Conversational adapter not yet implemented'); }
+    async connect() {
+        this.isConnected = true;
+    }
+    async process(input) {
+        throw new Error('ElevenLabs Conversational adapter not yet implemented');
+    }
 }
 
 class IBMWatsonAdapter extends BaseAdapter {
-    async connect() { this.isConnected = true; }
-    async process(input) { throw new Error('IBM Watson adapter not yet implemented'); }
+    async connect() {
+        this.isConnected = true;
+    }
+    async process(input) {
+        throw new Error('IBM Watson adapter not yet implemented');
+    }
 }
 
 export default VoiceRouter;
