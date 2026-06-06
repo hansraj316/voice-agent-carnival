@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
 import { VoiceAPIEndpoints } from '../routes/voice-api-endpoints.js';
+import { notFoundHandler, errorHandler } from '../middleware/error-middleware.js';
 
 // Load environment variables
 dotenv.config();
@@ -19,16 +20,18 @@ class MultiModalVoiceServer {
         this.app = express();
         this.server = createServer(this.app);
         this.wss = new WebSocketServer({ server: this.server });
-        
+
         this.setupExpress();
         this.setupWebSocket();
-        
+
         const port = process.env.PORT || 3000;
         this.server.listen(port, () => {
             console.log(`🎤 Multi-Modal Voice Agent Server running on http://localhost:${port}`);
             console.log(`📡 Supporting: WebSocket | WebRTC | SIP connections`);
             console.log(`🌐 Original Voice Agent: http://localhost:${port}`);
-            console.log(`🚀 Voice API Router (Open Router Style): http://localhost:${port}/voice-router`);
+            console.log(
+                `🚀 Voice API Router (Open Router Style): http://localhost:${port}/voice-router`
+            );
             console.log(`📊 API Documentation:`);
             console.log(`   - Models: http://localhost:${port}/v1/voice/models`);
             console.log(`   - Providers: http://localhost:${port}/v1/voice/providers`);
@@ -38,15 +41,15 @@ class MultiModalVoiceServer {
             console.log(`   - Usage: http://localhost:${port}/v1/voice/usage`);
         });
     }
-    
+
     setupExpress() {
         this.app.use(cors());
         this.app.use(express.json());
         this.app.use(express.static(path.join(__dirname, '../../public')));
-        
+
         this.app.get('/health', (req, res) => {
-            res.json({ 
-                status: 'healthy', 
+            res.json({
+                status: 'healthy',
                 timestamp: new Date().toISOString(),
                 api: 'OpenAI Realtime API (Direct)',
                 connections: ['WebSocket', 'WebRTC', 'SIP']
@@ -66,8 +69,8 @@ class MultiModalVoiceServer {
                 const response = await fetch('https://api.openai.com/v1/realtime/sessions', {
                     method: 'POST',
                     headers: {
-                        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+                        'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
                         model: 'gpt-4o-realtime-preview-2024-12-17',
@@ -84,13 +87,13 @@ class MultiModalVoiceServer {
                 }
 
                 const session = await response.json();
-                
+
                 // Check if response has the expected structure
                 if (!session.client_secret || !session.client_secret.value) {
                     throw new Error('Invalid session response: missing client_secret');
                 }
-                
-                res.json({ 
+
+                res.json({
                     token: session.client_secret.value,
                     expires_at: session.client_secret.expires_at,
                     session_id: session.id
@@ -141,13 +144,13 @@ class MultiModalVoiceServer {
                 });
 
                 const voicesResponse = await elevenlabs.voices.getAll();
-                
+
                 // Map voiceId to voice_id for client compatibility
-                const mappedVoices = (voicesResponse.voices || []).map(voice => ({
+                const mappedVoices = (voicesResponse.voices || []).map((voice) => ({
                     ...voice,
                     voice_id: voice.voiceId
                 }));
-                
+
                 res.json({
                     voices: mappedVoices,
                     provider: 'elevenlabs'
@@ -190,13 +193,13 @@ class MultiModalVoiceServer {
                 // Convert stream to buffer
                 const chunks = [];
                 const reader = audio.getReader();
-                
+
                 while (true) {
                     const { done, value } = await reader.read();
                     if (done) break;
                     chunks.push(value);
                 }
-                
+
                 const audioBuffer = Buffer.concat(chunks);
 
                 res.setHeader('Content-Type', 'audio/mpeg');
@@ -216,32 +219,40 @@ class MultiModalVoiceServer {
         this.app.get('/voice-router', (req, res) => {
             res.sendFile(path.join(__dirname, 'public', 'voice-router-ui.html'));
         });
+
+        // Centralized 404 + error handling. Registered after all routes so
+        // unknown /v1/voice/* paths return a JSON envelope instead of HTML,
+        // and all thrown errors are normalized with credentials redacted.
+        this.app.use(notFoundHandler);
+        this.app.use(errorHandler);
     }
-    
+
     setupWebSocket() {
         this.wss.on('connection', (clientWs, request) => {
             console.log('🔌 WebSocket client connected from:', request.socket.remoteAddress);
-            
+
             const sessionHandler = new WebSocketSessionHandler(clientWs);
-            
+
             clientWs.on('message', (message) => {
                 try {
                     const data = JSON.parse(message);
                     sessionHandler.handleClientMessage(data);
                 } catch (error) {
                     console.error('❌ Failed to parse client message:', error);
-                    clientWs.send(JSON.stringify({
-                        type: 'error',
-                        message: 'Invalid message format'
-                    }));
+                    clientWs.send(
+                        JSON.stringify({
+                            type: 'error',
+                            message: 'Invalid message format'
+                        })
+                    );
                 }
             });
-            
+
             clientWs.on('close', () => {
                 console.log('🔌 WebSocket client disconnected');
                 sessionHandler.cleanup();
             });
-            
+
             clientWs.on('error', (error) => {
                 console.error('❌ WebSocket client error:', error);
                 sessionHandler.cleanup();
@@ -256,10 +267,10 @@ class WebSocketSessionHandler {
         this.openaiWs = null;
         this.isConnectedToOpenAI = false;
         this.audioBuffer = [];
-        
+
         this.connectToOpenAI();
     }
-    
+
     async connectToOpenAI() {
         if (!process.env.OPENAI_API_KEY) {
             this.sendToClient({
@@ -268,23 +279,23 @@ class WebSocketSessionHandler {
             });
             return;
         }
-        
+
         try {
             console.log('🔗 Connecting to OpenAI Realtime API via WebSocket...');
-            
+
             const url = `wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17`;
-            
+
             this.openaiWs = new WebSocket(url, {
                 headers: {
-                    'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+                    Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
                     'OpenAI-Beta': 'realtime=v1'
                 }
             });
-            
+
             this.openaiWs.on('open', () => {
                 console.log('✅ Connected to OpenAI Realtime API via WebSocket');
                 this.isConnectedToOpenAI = true;
-                
+
                 // Configure the session for echo functionality
                 this.sendToOpenAI({
                     type: 'session.update',
@@ -307,14 +318,14 @@ class WebSocketSessionHandler {
                         max_response_output_tokens: 4096
                     }
                 });
-                
+
                 this.sendToClient({
                     type: 'connected',
                     connection_type: 'websocket',
                     message: 'Connected via WebSocket - Ready to echo!'
                 });
             });
-            
+
             this.openaiWs.on('message', (data) => {
                 try {
                     const message = JSON.parse(data);
@@ -323,7 +334,7 @@ class WebSocketSessionHandler {
                     console.error('❌ Failed to parse OpenAI message:', error);
                 }
             });
-            
+
             this.openaiWs.on('close', (code, reason) => {
                 console.log(`🔌 OpenAI WebSocket connection closed: ${code} ${reason}`);
                 this.isConnectedToOpenAI = false;
@@ -332,7 +343,7 @@ class WebSocketSessionHandler {
                     message: 'Lost WebSocket connection to OpenAI'
                 });
             });
-            
+
             this.openaiWs.on('error', (error) => {
                 console.error('❌ OpenAI WebSocket error:', error);
                 this.sendToClient({
@@ -340,7 +351,6 @@ class WebSocketSessionHandler {
                     message: 'WebSocket connection error: ' + error.message
                 });
             });
-            
         } catch (error) {
             console.error('❌ Failed to connect to OpenAI via WebSocket:', error);
             this.sendToClient({
@@ -349,7 +359,7 @@ class WebSocketSessionHandler {
             });
         }
     }
-    
+
     handleClientMessage(message) {
         switch (message.type) {
             case 'audio_input':
@@ -357,20 +367,20 @@ class WebSocketSessionHandler {
                     // Convert the audio data to base64 for OpenAI
                     const audioBuffer = Buffer.from(new Int16Array(message.data).buffer);
                     const base64Audio = audioBuffer.toString('base64');
-                    
+
                     this.sendToOpenAI({
                         type: 'input_audio_buffer.append',
                         audio: base64Audio
                     });
                 }
                 break;
-                
+
             case 'commit_audio':
                 if (this.isConnectedToOpenAI) {
                     this.sendToOpenAI({
                         type: 'input_audio_buffer.commit'
                     });
-                    
+
                     this.sendToOpenAI({
                         type: 'response.create',
                         response: {
@@ -380,22 +390,22 @@ class WebSocketSessionHandler {
                     });
                 }
                 break;
-                
+
             default:
                 console.log('❓ Unknown client message type:', message.type);
         }
     }
-    
+
     handleOpenAIMessage(message) {
         switch (message.type) {
             case 'session.created':
                 console.log('📝 OpenAI session created:', message.session.id);
                 break;
-                
+
             case 'session.updated':
                 console.log('🔄 OpenAI session updated');
                 break;
-                
+
             case 'input_audio_buffer.speech_started':
                 console.log('🎤 Speech detected');
                 this.sendToClient({
@@ -403,7 +413,7 @@ class WebSocketSessionHandler {
                     message: 'Listening...'
                 });
                 break;
-                
+
             case 'input_audio_buffer.speech_stopped':
                 console.log('🛑 Speech ended');
                 this.sendToClient({
@@ -411,7 +421,7 @@ class WebSocketSessionHandler {
                     message: 'Processing...'
                 });
                 break;
-                
+
             case 'conversation.item.input_audio_transcription.completed':
                 console.log('📝 Transcribed:', message.transcript);
                 this.sendToClient({
@@ -419,14 +429,14 @@ class WebSocketSessionHandler {
                     transcript: message.transcript
                 });
                 break;
-                
+
             case 'response.audio.delta':
                 // Accumulate audio chunks
                 if (message.delta) {
                     this.audioBuffer.push(message.delta);
                 }
                 break;
-                
+
             case 'response.audio.done':
                 console.log('🔊 Audio response complete');
                 if (this.audioBuffer.length > 0) {
@@ -434,16 +444,16 @@ class WebSocketSessionHandler {
                     const completeAudio = this.audioBuffer.join('');
                     const audioData = Buffer.from(completeAudio, 'base64');
                     const audioArray = Array.from(new Int16Array(audioData.buffer));
-                    
+
                     this.sendToClient({
                         type: 'audio_output',
                         data: audioArray
                     });
-                    
+
                     this.audioBuffer = []; // Clear buffer
                 }
                 break;
-                
+
             case 'response.done':
                 console.log('✅ Response complete');
                 this.sendToClient({
@@ -451,7 +461,7 @@ class WebSocketSessionHandler {
                     message: 'Echo complete - Ready for next input'
                 });
                 break;
-                
+
             case 'error':
                 console.error('❌ OpenAI error:', message);
                 this.sendToClient({
@@ -459,7 +469,7 @@ class WebSocketSessionHandler {
                     message: message.error?.message || 'Unknown OpenAI error'
                 });
                 break;
-                
+
             default:
                 // Log other message types for debugging
                 if (process.env.DEBUG) {
@@ -467,19 +477,19 @@ class WebSocketSessionHandler {
                 }
         }
     }
-    
+
     sendToClient(message) {
         if (this.clientWs && this.clientWs.readyState === WebSocket.OPEN) {
             this.clientWs.send(JSON.stringify(message));
         }
     }
-    
+
     sendToOpenAI(message) {
         if (this.openaiWs && this.openaiWs.readyState === WebSocket.OPEN) {
             this.openaiWs.send(JSON.stringify(message));
         }
     }
-    
+
     cleanup() {
         if (this.openaiWs) {
             this.openaiWs.close();
@@ -487,5 +497,10 @@ class WebSocketSessionHandler {
     }
 }
 
-// Start the server
-new MultiModalVoiceServer();
+// Start the server only when executed directly (not when imported, e.g. in tests)
+const isMainModule = process.argv[1] === fileURLToPath(import.meta.url);
+if (isMainModule) {
+    new MultiModalVoiceServer();
+}
+
+export { MultiModalVoiceServer, WebSocketSessionHandler };

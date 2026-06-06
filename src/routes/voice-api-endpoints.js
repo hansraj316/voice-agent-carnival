@@ -9,18 +9,27 @@ import ConfigManager from '../config/config-manager.js';
 import AnalyticsTracker from '../services/analytics-tracker.js';
 
 export class VoiceAPIEndpoints {
-    constructor(app) {
+    constructor(app, options = {}) {
         this.app = app;
         this.voiceRouter = new VoiceRouter();
         this.configManager = new ConfigManager();
         this.analyticsTracker = new AnalyticsTracker();
-        this.init();
+
+        // Routes do not depend on async state, so register them synchronously
+        // up front. This keeps route registration deterministic (important for
+        // tests and for the 404 handler ordering in the server).
+        this.setupRoutes();
+
+        // Background data loading (config + analytics persistence). Skippable
+        // in tests via { skipInit: true } to avoid timers/file IO.
+        if (!options.skipInit) {
+            this.init();
+        }
     }
 
     async init() {
         await this.configManager.init();
         await this.analyticsTracker.init();
-        this.setupRoutes();
     }
 
     setupRoutes() {
@@ -28,39 +37,45 @@ export class VoiceAPIEndpoints {
         this.app.get('/v1/voice/models', this.getModels.bind(this));
         this.app.get('/v1/voice/providers', this.getProviders.bind(this));
         this.app.get('/v1/voice/providers/:provider', this.getProviderDetails.bind(this));
-        
+
         // Voice Processing Endpoints (OpenRouter-style)
         this.app.post('/v1/voice/transcribe', this.transcribe.bind(this));
         this.app.post('/v1/voice/synthesize', this.synthesize.bind(this));
         this.app.post('/v1/voice/chat', this.chat.bind(this));
-        
+
         // WebSocket endpoint for real-time voice
         this.app.post('/v1/voice/realtime/session', this.createRealtimeSession.bind(this));
-        
+
         // Usage and Analytics
         this.app.get('/v1/voice/usage', this.getUsage.bind(this));
         this.app.get('/v1/voice/usage/:provider', this.getProviderUsage.bind(this));
-        
+
         // Provider validation
         this.app.post('/v1/voice/validate', this.validateProvider.bind(this));
-        
+
         // Configuration Management Endpoints
         this.app.post('/v1/voice/config/provider', this.saveProviderConfig.bind(this));
         this.app.get('/v1/voice/config/provider/:provider', this.getProviderConfig.bind(this));
-        this.app.delete('/v1/voice/config/provider/:provider', this.removeProviderConfig.bind(this));
+        this.app.delete(
+            '/v1/voice/config/provider/:provider',
+            this.removeProviderConfig.bind(this)
+        );
         this.app.get('/v1/voice/config/providers', this.getUserProviders.bind(this));
         this.app.post('/v1/voice/config/settings', this.updateUserSettings.bind(this));
         this.app.get('/v1/voice/config/settings', this.getUserSettings.bind(this));
         this.app.delete('/v1/voice/config/clear', this.clearUserConfig.bind(this));
         this.app.get('/v1/voice/config/export', this.exportUserConfig.bind(this));
-        
+
         // Health and Error Management Endpoints
         this.app.get('/v1/voice/health', this.getSystemHealth.bind(this));
         this.app.get('/v1/voice/health/:provider', this.getProviderHealth.bind(this));
-        this.app.post('/v1/voice/health/:provider/reset', this.resetProviderCircuitBreaker.bind(this));
+        this.app.post(
+            '/v1/voice/health/:provider/reset',
+            this.resetProviderCircuitBreaker.bind(this)
+        );
         this.app.get('/v1/voice/errors', this.getErrorStats.bind(this));
         this.app.get('/v1/voice/errors/:provider', this.getProviderErrors.bind(this));
-        
+
         // Analytics and Cost Tracking Endpoints
         this.app.get('/v1/voice/analytics', this.getAnalytics.bind(this));
         this.app.get('/v1/voice/analytics/:provider', this.getProviderAnalytics.bind(this));
@@ -75,9 +90,9 @@ export class VoiceAPIEndpoints {
     async getModels(req, res) {
         try {
             const models = [];
-            
+
             for (const [providerId, provider] of Object.entries(VOICE_PROVIDERS)) {
-                provider.models.forEach(model => {
+                provider.models.forEach((model) => {
                     models.push({
                         id: `${providerId}/${model}`,
                         object: 'model',
@@ -110,7 +125,7 @@ export class VoiceAPIEndpoints {
         try {
             const { type } = req.query;
             const providers = this.voiceRouter.listProviders(type);
-            
+
             res.json({
                 object: 'list',
                 data: Object.entries(providers).map(([id, config]) => ({
@@ -138,7 +153,7 @@ export class VoiceAPIEndpoints {
         try {
             const { provider } = req.params;
             const providerConfig = VOICE_PROVIDERS[provider];
-            
+
             if (!providerConfig) {
                 return res.status(404).json({ error: 'Provider not found' });
             }
@@ -160,27 +175,27 @@ export class VoiceAPIEndpoints {
     async transcribe(req, res) {
         const sessionId = this.generateSessionId();
         let session = null;
-        
+
         try {
-            const { 
-                provider, 
-                api_key, 
-                model, 
-                audio_file, 
+            const {
+                provider,
+                api_key,
+                model,
+                audio_file,
                 audio_url,
                 language = 'en',
-                options = {} 
+                options = {}
             } = req.body;
 
             if (!provider || !api_key) {
-                return res.status(400).json({ 
-                    error: 'Provider and api_key are required' 
+                return res.status(400).json({
+                    error: 'Provider and api_key are required'
                 });
             }
 
             if (!audio_file && !audio_url) {
-                return res.status(400).json({ 
-                    error: 'Either audio_file or audio_url is required' 
+                return res.status(400).json({
+                    error: 'Either audio_file or audio_url is required'
                 });
             }
 
@@ -238,10 +253,9 @@ export class VoiceAPIEndpoints {
                 confidence: result.confidence,
                 raw_response: result
             });
-
         } catch (error) {
             console.error('Transcription error:', error);
-            
+
             // Track error in analytics
             if (session) {
                 this.analyticsTracker.trackError(sessionId, {
@@ -249,8 +263,8 @@ export class VoiceAPIEndpoints {
                     message: error.message
                 });
             }
-            
-            res.status(500).json({ 
+
+            res.status(500).json({
                 error: error.message,
                 type: 'transcription_error'
             });
@@ -263,19 +277,19 @@ export class VoiceAPIEndpoints {
      */
     async synthesize(req, res) {
         try {
-            const { 
-                provider, 
-                api_key, 
-                model, 
-                text, 
-                voice, 
+            const {
+                provider,
+                api_key,
+                model,
+                text,
+                voice,
                 response_format = 'mp3',
-                options = {} 
+                options = {}
             } = req.body;
 
             if (!provider || !api_key || !text) {
-                return res.status(400).json({ 
-                    error: 'Provider, api_key, and text are required' 
+                return res.status(400).json({
+                    error: 'Provider, api_key, and text are required'
                 });
             }
 
@@ -303,10 +317,9 @@ export class VoiceAPIEndpoints {
                 text,
                 duration_estimate: Math.ceil(text.length / 15) // Rough estimate
             });
-
         } catch (error) {
             console.error('Synthesis error:', error);
-            res.status(500).json({ 
+            res.status(500).json({
                 error: error.message,
                 type: 'synthesis_error'
             });
@@ -319,19 +332,19 @@ export class VoiceAPIEndpoints {
      */
     async chat(req, res) {
         try {
-            const { 
-                provider, 
-                api_key, 
-                model, 
+            const {
+                provider,
+                api_key,
+                model,
                 messages = [],
                 voice = 'alloy',
                 stream = false,
-                options = {} 
+                options = {}
             } = req.body;
 
             if (!provider || !api_key || !messages.length) {
-                return res.status(400).json({ 
-                    error: 'Provider, api_key, and messages are required' 
+                return res.status(400).json({
+                    error: 'Provider, api_key, and messages are required'
                 });
             }
 
@@ -340,7 +353,7 @@ export class VoiceAPIEndpoints {
                 res.writeHead(200, {
                     'Content-Type': 'text/event-stream',
                     'Cache-Control': 'no-cache',
-                    'Connection': 'keep-alive',
+                    Connection: 'keep-alive',
                     'Access-Control-Allow-Origin': '*'
                 });
             }
@@ -359,33 +372,34 @@ export class VoiceAPIEndpoints {
                 adapter.onMessage((message) => {
                     res.write(`data: ${JSON.stringify(message)}\\n\\n`);
                 });
-                
+
                 // Send messages to provider
-                messages.forEach(msg => {
+                messages.forEach((msg) => {
                     adapter.send(msg);
                 });
             } else {
                 // Handle non-streaming response
                 const response = await adapter.process(messages, { voice, ...options });
-                
+
                 await adapter.disconnect();
 
                 res.json({
                     object: 'voice_chat_completion',
                     provider,
                     model,
-                    choices: [{
-                        index: 0,
-                        message: response.message || response,
-                        finish_reason: 'stop'
-                    }],
+                    choices: [
+                        {
+                            index: 0,
+                            message: response.message || response,
+                            finish_reason: 'stop'
+                        }
+                    ],
                     usage: response.usage || {}
                 });
             }
-
         } catch (error) {
             console.error('Chat error:', error);
-            res.status(500).json({ 
+            res.status(500).json({
                 error: error.message,
                 type: 'chat_error'
             });
@@ -398,17 +412,11 @@ export class VoiceAPIEndpoints {
      */
     async createRealtimeSession(req, res) {
         try {
-            const { 
-                provider, 
-                api_key, 
-                model, 
-                voice = 'alloy',
-                options = {} 
-            } = req.body;
+            const { provider, api_key, model, voice = 'alloy', options = {} } = req.body;
 
             if (!provider || !api_key) {
-                return res.status(400).json({ 
-                    error: 'Provider and api_key are required' 
+                return res.status(400).json({
+                    error: 'Provider and api_key are required'
                 });
             }
 
@@ -428,10 +436,9 @@ export class VoiceAPIEndpoints {
                 object: 'realtime_session',
                 ...sessionConfig
             });
-
         } catch (error) {
             console.error('Session creation error:', error);
-            res.status(500).json({ 
+            res.status(500).json({
                 error: error.message,
                 type: 'session_error'
             });
@@ -445,7 +452,7 @@ export class VoiceAPIEndpoints {
     async getUsage(req, res) {
         try {
             const stats = this.voiceRouter.getUsageStats();
-            
+
             res.json({
                 object: 'usage_stats',
                 total_providers: Object.keys(stats).length,
@@ -466,7 +473,7 @@ export class VoiceAPIEndpoints {
         try {
             const { provider } = req.params;
             const stats = this.voiceRouter.getUsageStats(provider);
-            
+
             if (!stats) {
                 return res.status(404).json({ error: 'Provider not found or no usage data' });
             }
@@ -490,17 +497,17 @@ export class VoiceAPIEndpoints {
             const { provider, api_key, options = {} } = req.body;
 
             if (!provider || !api_key) {
-                return res.status(400).json({ 
-                    error: 'Provider and api_key are required' 
+                return res.status(400).json({
+                    error: 'Provider and api_key are required'
                 });
             }
 
             const validation = this.voiceRouter.validateProvider(provider, api_key, options);
-            
+
             if (!validation.valid) {
-                return res.status(400).json({ 
-                    valid: false, 
-                    error: validation.error 
+                return res.status(400).json({
+                    valid: false,
+                    error: validation.error
                 });
             }
 
@@ -511,7 +518,7 @@ export class VoiceAPIEndpoints {
                     apiKey: api_key,
                     options
                 });
-                
+
                 await adapter.connect();
                 await adapter.disconnect();
 
@@ -527,7 +534,6 @@ export class VoiceAPIEndpoints {
                     error: `Connection failed: ${connectionError.message}`
                 });
             }
-
         } catch (error) {
             res.status(500).json({ error: error.message });
         }
@@ -540,10 +546,10 @@ export class VoiceAPIEndpoints {
 
         const url = new URL(baseURL);
         url.searchParams.set('api_key', apiKey);
-        
+
         if (options.model) url.searchParams.set('model', options.model);
         if (options.voice) url.searchParams.set('voice', options.voice);
-        
+
         return url.toString();
     }
 
@@ -569,8 +575,8 @@ export class VoiceAPIEndpoints {
             const userId = this.getUserId(req);
 
             if (!provider || !api_key) {
-                return res.status(400).json({ 
-                    error: 'Provider and api_key are required' 
+                return res.status(400).json({
+                    error: 'Provider and api_key are required'
                 });
             }
 
@@ -583,7 +589,7 @@ export class VoiceAPIEndpoints {
             });
 
             if (!validation.valid) {
-                return res.status(400).json({ 
+                return res.status(400).json({
                     error: 'Invalid configuration',
                     details: validation.errors
                 });
@@ -604,10 +610,9 @@ export class VoiceAPIEndpoints {
                 user_id: userId,
                 has_api_key: !!api_key
             });
-
         } catch (error) {
             console.error('Save provider config error:', error);
-            res.status(500).json({ 
+            res.status(500).json({
                 error: error.message,
                 type: 'config_save_error'
             });
@@ -626,8 +631,8 @@ export class VoiceAPIEndpoints {
             const config = this.configManager.getProviderConfig(userId, provider);
 
             if (!config) {
-                return res.status(404).json({ 
-                    error: 'Provider configuration not found' 
+                return res.status(404).json({
+                    error: 'Provider configuration not found'
                 });
             }
 
@@ -641,10 +646,9 @@ export class VoiceAPIEndpoints {
                 has_api_key: !!config.apiKey,
                 saved_at: config.savedAt
             });
-
         } catch (error) {
             console.error('Get provider config error:', error);
-            res.status(500).json({ 
+            res.status(500).json({
                 error: error.message,
                 type: 'config_get_error'
             });
@@ -663,8 +667,8 @@ export class VoiceAPIEndpoints {
             const result = await this.configManager.removeProviderConfig(userId, provider);
 
             if (!result.success) {
-                return res.status(404).json({ 
-                    error: result.error || 'Provider configuration not found' 
+                return res.status(404).json({
+                    error: result.error || 'Provider configuration not found'
                 });
             }
 
@@ -674,10 +678,9 @@ export class VoiceAPIEndpoints {
                 user_id: userId,
                 success: true
             });
-
         } catch (error) {
             console.error('Remove provider config error:', error);
-            res.status(500).json({ 
+            res.status(500).json({
                 error: error.message,
                 type: 'config_delete_error'
             });
@@ -699,10 +702,9 @@ export class VoiceAPIEndpoints {
                 providers,
                 total: providers.length
             });
-
         } catch (error) {
             console.error('Get user providers error:', error);
-            res.status(500).json({ 
+            res.status(500).json({
                 error: error.message,
                 type: 'providers_get_error'
             });
@@ -724,10 +726,9 @@ export class VoiceAPIEndpoints {
                 settings,
                 updated_at: new Date().toISOString()
             });
-
         } catch (error) {
             console.error('Update user settings error:', error);
-            res.status(500).json({ 
+            res.status(500).json({
                 error: error.message,
                 type: 'settings_update_error'
             });
@@ -748,10 +749,9 @@ export class VoiceAPIEndpoints {
                 user_id: userId,
                 settings
             });
-
         } catch (error) {
             console.error('Get user settings error:', error);
-            res.status(500).json({ 
+            res.status(500).json({
                 error: error.message,
                 type: 'settings_get_error'
             });
@@ -772,10 +772,9 @@ export class VoiceAPIEndpoints {
                 user_id: userId,
                 success: result.success
             });
-
         } catch (error) {
             console.error('Clear user config error:', error);
-            res.status(500).json({ 
+            res.status(500).json({
                 error: error.message,
                 type: 'config_clear_error'
             });
@@ -792,8 +791,8 @@ export class VoiceAPIEndpoints {
             const config = this.configManager.exportUserConfig(userId);
 
             if (!config) {
-                return res.status(404).json({ 
-                    error: 'No configuration found for user' 
+                return res.status(404).json({
+                    error: 'No configuration found for user'
                 });
             }
 
@@ -802,10 +801,9 @@ export class VoiceAPIEndpoints {
                 user_id: userId,
                 config
             });
-
         } catch (error) {
             console.error('Export user config error:', error);
-            res.status(500).json({ 
+            res.status(500).json({
                 error: error.message,
                 type: 'config_export_error'
             });
@@ -821,16 +819,15 @@ export class VoiceAPIEndpoints {
     async getSystemHealth(req, res) {
         try {
             const health = this.voiceRouter.getSystemHealth();
-            
+
             res.json({
                 object: 'system_health',
                 ...health,
                 timestamp: new Date().toISOString()
             });
-
         } catch (error) {
             console.error('Get system health error:', error);
-            res.status(500).json({ 
+            res.status(500).json({
                 error: error.message,
                 type: 'health_check_error'
             });
@@ -848,8 +845,8 @@ export class VoiceAPIEndpoints {
             const isAvailable = this.voiceRouter.isProviderAvailable(provider);
 
             if (!errorStats) {
-                return res.status(404).json({ 
-                    error: 'Provider not found' 
+                return res.status(404).json({
+                    error: 'Provider not found'
                 });
             }
 
@@ -860,10 +857,9 @@ export class VoiceAPIEndpoints {
                 ...errorStats,
                 timestamp: new Date().toISOString()
             });
-
         } catch (error) {
             console.error('Get provider health error:', error);
-            res.status(500).json({ 
+            res.status(500).json({
                 error: error.message,
                 type: 'provider_health_error'
             });
@@ -877,10 +873,10 @@ export class VoiceAPIEndpoints {
     async resetProviderCircuitBreaker(req, res) {
         try {
             const { provider } = req.params;
-            
+
             if (!VOICE_PROVIDERS[provider]) {
-                return res.status(404).json({ 
-                    error: 'Provider not found' 
+                return res.status(404).json({
+                    error: 'Provider not found'
                 });
             }
 
@@ -892,10 +888,9 @@ export class VoiceAPIEndpoints {
                 success: true,
                 timestamp: new Date().toISOString()
             });
-
         } catch (error) {
             console.error('Reset circuit breaker error:', error);
-            res.status(500).json({ 
+            res.status(500).json({
                 error: error.message,
                 type: 'circuit_breaker_reset_error'
             });
@@ -909,16 +904,15 @@ export class VoiceAPIEndpoints {
     async getErrorStats(req, res) {
         try {
             const stats = this.voiceRouter.getErrorStats();
-            
+
             res.json({
                 object: 'error_statistics',
                 stats,
                 timestamp: new Date().toISOString()
             });
-
         } catch (error) {
             console.error('Get error stats error:', error);
-            res.status(500).json({ 
+            res.status(500).json({
                 error: error.message,
                 type: 'error_stats_error'
             });
@@ -935,8 +929,8 @@ export class VoiceAPIEndpoints {
             const stats = this.voiceRouter.getErrorStats(provider);
 
             if (!stats) {
-                return res.status(404).json({ 
-                    error: 'Provider not found or no error data' 
+                return res.status(404).json({
+                    error: 'Provider not found or no error data'
                 });
             }
 
@@ -946,10 +940,9 @@ export class VoiceAPIEndpoints {
                 ...stats,
                 timestamp: new Date().toISOString()
             });
-
         } catch (error) {
             console.error('Get provider errors error:', error);
-            res.status(500).json({ 
+            res.status(500).json({
                 error: error.message,
                 type: 'provider_errors_error'
             });
@@ -964,11 +957,7 @@ export class VoiceAPIEndpoints {
      */
     async getAnalytics(req, res) {
         try {
-            const { 
-                provider, 
-                timeRange, 
-                operation 
-            } = req.query;
+            const { provider, timeRange, operation } = req.query;
 
             const analytics = this.analyticsTracker.getAnalytics({
                 provider,
@@ -981,10 +970,9 @@ export class VoiceAPIEndpoints {
                 ...analytics,
                 timestamp: new Date().toISOString()
             });
-
         } catch (error) {
             console.error('Get analytics error:', error);
-            res.status(500).json({ 
+            res.status(500).json({
                 error: error.message,
                 type: 'analytics_error'
             });
@@ -1001,8 +989,8 @@ export class VoiceAPIEndpoints {
             const { timeRange, operation } = req.query;
 
             if (!VOICE_PROVIDERS[provider]) {
-                return res.status(404).json({ 
-                    error: 'Provider not found' 
+                return res.status(404).json({
+                    error: 'Provider not found'
                 });
             }
 
@@ -1018,10 +1006,9 @@ export class VoiceAPIEndpoints {
                 ...analytics,
                 timestamp: new Date().toISOString()
             });
-
         } catch (error) {
             console.error('Get provider analytics error:', error);
-            res.status(500).json({ 
+            res.status(500).json({
                 error: error.message,
                 type: 'provider_analytics_error'
             });
@@ -1041,10 +1028,9 @@ export class VoiceAPIEndpoints {
                 ...report,
                 timestamp: new Date().toISOString()
             });
-
         } catch (error) {
             console.error('Get cost report error:', error);
-            res.status(500).json({ 
+            res.status(500).json({
                 error: error.message,
                 type: 'cost_report_error'
             });
@@ -1058,10 +1044,10 @@ export class VoiceAPIEndpoints {
     async getCostReportByPeriod(req, res) {
         try {
             const { period } = req.params;
-            
+
             if (!['hour', 'day', 'week', 'month'].includes(period)) {
-                return res.status(400).json({ 
-                    error: 'Invalid period. Must be: hour, day, week, or month' 
+                return res.status(400).json({
+                    error: 'Invalid period. Must be: hour, day, week, or month'
                 });
             }
 
@@ -1072,19 +1058,13 @@ export class VoiceAPIEndpoints {
                 ...report,
                 timestamp: new Date().toISOString()
             });
-
         } catch (error) {
             console.error('Get cost report by period error:', error);
-            res.status(500).json({ 
+            res.status(500).json({
                 error: error.message,
                 type: 'cost_report_period_error'
             });
         }
-    }
-
-    // Helper method to generate session ID
-    generateSessionId() {
-        return 'sess_' + Math.random().toString(36).substr(2, 16) + Date.now().toString(36);
     }
 }
 

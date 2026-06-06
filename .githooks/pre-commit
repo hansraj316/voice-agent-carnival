@@ -1,0 +1,21 @@
+#!/usr/bin/env sh
+#
+# Pre-commit quality gate for voice-agent-carnival.
+# Runs lint -> format check -> tests before allowing a commit.
+#
+# Enable once per clone:
+#   git config core.hooksPath .githooks
+# (or run `npm run prepare`)
+
+set -e
+
+echo "▶ pre-commit: eslint"
+npm run lint
+
+echo "▶ pre-commit: prettier --check"
+npm run format:check
+
+echo "▶ pre-commit: vitest"
+npm test
+
+echo "✓ pre-commit checks passed"

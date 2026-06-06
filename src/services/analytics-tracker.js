@@ -16,7 +16,7 @@ export class AnalyticsTracker {
         this.sessionStart = new Date();
         this.flushInterval = options.flushInterval || 60000; // 1 minute
         this.maxMemoryEntries = options.maxMemoryEntries || 1000;
-        
+
         // In-memory analytics data
         this.sessions = new Map();
         this.metrics = {
@@ -36,34 +36,34 @@ export class AnalyticsTracker {
         this.costTables = {
             'openai-realtime': {
                 type: 'per-minute',
-                inputCost: 0.06,  // $0.06 per minute input
+                inputCost: 0.06, // $0.06 per minute input
                 outputCost: 0.24, // $0.24 per minute output
                 currency: 'USD'
             },
-            'deepgram': {
+            deepgram: {
                 type: 'per-minute',
                 preRecordedCost: 0.0043, // $0.0043 per minute
-                streamingCost: 0.0077,   // $0.0077 per minute
+                streamingCost: 0.0077, // $0.0077 per minute
                 currency: 'USD'
             },
-            'assemblyai': {
+            assemblyai: {
                 type: 'per-hour',
-                asyncCost: 0.37,      // $0.37 per hour
-                realtimeCost: 0.47,   // $0.47 per hour
+                asyncCost: 0.37, // $0.37 per hour
+                realtimeCost: 0.47, // $0.47 per hour
                 currency: 'USD'
             },
-            'whisper': {
+            whisper: {
                 type: 'per-minute',
-                cost: 0.006,  // $0.006 per minute
+                cost: 0.006, // $0.006 per minute
                 currency: 'USD'
             },
-            'elevenlabs': {
+            elevenlabs: {
                 type: 'per-character',
-                creatorCost: 0.0003,  // $0.30 per 1k characters
-                proCost: 0.00024,     // $0.24 per 1k characters
+                creatorCost: 0.0003, // $0.30 per 1k characters
+                proCost: 0.00024, // $0.24 per 1k characters
                 currency: 'USD'
             },
-            'playht': {
+            playht: {
                 type: 'per-character',
                 estimatedCost: 0.0002, // Estimated based on usage-based pricing
                 currency: 'USD'
@@ -132,8 +132,10 @@ export class AnalyticsTracker {
         // Update hourly requests
         const hour = new Date().getHours();
         const hourKey = `${new Date().toDateString()}-${hour}`;
-        this.metrics.requestsByHour.set(hourKey, 
-            (this.metrics.requestsByHour.get(hourKey) || 0) + 1);
+        this.metrics.requestsByHour.set(
+            hourKey,
+            (this.metrics.requestsByHour.get(hourKey) || 0) + 1
+        );
 
         return session;
     }
@@ -220,35 +222,42 @@ export class AnalyticsTracker {
         const usage = session.usage;
 
         switch (costTable.type) {
-            case 'per-minute':
+            case 'per-minute': {
                 const minutes = Math.max(session.duration / 60000, 0.1); // Minimum 0.1 minute
-                
+
                 if (session.provider === 'openai-realtime') {
-                    cost = (usage.inputTokens || 0) * costTable.inputCost / 1000000 * 60; // Convert tokens to minutes
-                    cost += (usage.outputTokens || 0) * costTable.outputCost / 1000000 * 60;
+                    cost = (((usage.inputTokens || 0) * costTable.inputCost) / 1000000) * 60; // Convert tokens to minutes
+                    cost += (((usage.outputTokens || 0) * costTable.outputCost) / 1000000) * 60;
                 } else if (session.provider === 'deepgram') {
                     const isStreaming = session.operation === 'realtime';
-                    cost = minutes * (isStreaming ? costTable.streamingCost : costTable.preRecordedCost);
+                    cost =
+                        minutes *
+                        (isStreaming ? costTable.streamingCost : costTable.preRecordedCost);
                 } else {
                     cost = minutes * (costTable.cost || 0);
                 }
                 break;
+            }
 
-            case 'per-hour':
+            case 'per-hour': {
                 const hours = Math.max(session.duration / 3600000, 0.01); // Minimum 0.01 hour
                 const isRealtime = session.operation === 'realtime';
                 cost = hours * (isRealtime ? costTable.realtimeCost : costTable.asyncCost);
                 break;
+            }
 
-            case 'per-character':
+            case 'per-character': {
                 const characters = usage.characters || session.metadata.textLength || 0;
                 if (session.provider === 'elevenlabs') {
                     // Assume Pro tier pricing as default
                     cost = characters * costTable.proCost;
                 } else {
-                    cost = characters * (costTable.cost || costTable.estimatedCost || costTable.neuralCost || 0);
+                    cost =
+                        characters *
+                        (costTable.cost || costTable.estimatedCost || costTable.neuralCost || 0);
                 }
                 break;
+            }
 
             default:
                 cost = 0;
@@ -278,17 +287,19 @@ export class AnalyticsTracker {
         providerStats.requests++;
         providerStats.totalDuration += session.duration;
         providerStats.totalCost += session.cost;
-        
+
         if (session.success) {
             providerStats.successfulRequests++;
         }
-        
+
         providerStats.averageResponseTime = providerStats.totalDuration / providerStats.requests;
-        providerStats.errorRate = 1 - (providerStats.successfulRequests / providerStats.requests);
+        providerStats.errorRate = 1 - providerStats.successfulRequests / providerStats.requests;
 
         // Update cost tracking
-        this.metrics.costByProvider.set(session.provider, 
-            (this.metrics.costByProvider.get(session.provider) || 0) + session.cost);
+        this.metrics.costByProvider.set(
+            session.provider,
+            (this.metrics.costByProvider.get(session.provider) || 0) + session.cost
+        );
 
         // Update global metrics
         this.metrics.totalCost += session.cost;
@@ -302,34 +313,30 @@ export class AnalyticsTracker {
      * @returns {Object} Analytics summary
      */
     getAnalytics(options = {}) {
-        const { 
-            provider = null, 
-            timeRange = null, 
-            operation = null 
-        } = options;
+        const { provider = null, timeRange = null, operation = null } = options;
 
         let filteredSessions = Array.from(this.sessions.values());
 
         // Apply filters
         if (provider) {
-            filteredSessions = filteredSessions.filter(s => s.provider === provider);
+            filteredSessions = filteredSessions.filter((s) => s.provider === provider);
         }
 
         if (operation) {
-            filteredSessions = filteredSessions.filter(s => s.operation === operation);
+            filteredSessions = filteredSessions.filter((s) => s.operation === operation);
         }
 
         if (timeRange) {
             const now = Date.now();
-            const cutoff = now - (timeRange * 60 * 1000); // timeRange in minutes
-            filteredSessions = filteredSessions.filter(s => s.startTime >= cutoff);
+            const cutoff = now - timeRange * 60 * 1000; // timeRange in minutes
+            filteredSessions = filteredSessions.filter((s) => s.startTime >= cutoff);
         }
 
         // Calculate filtered metrics
         const analytics = {
             summary: {
                 totalSessions: filteredSessions.length,
-                successfulSessions: filteredSessions.filter(s => s.success).length,
+                successfulSessions: filteredSessions.filter((s) => s.success).length,
                 totalCost: filteredSessions.reduce((sum, s) => sum + s.cost, 0),
                 totalDuration: filteredSessions.reduce((sum, s) => sum + (s.duration || 0), 0),
                 averageResponseTime: 0,
@@ -347,13 +354,15 @@ export class AnalyticsTracker {
 
         // Calculate derived metrics
         if (analytics.summary.totalSessions > 0) {
-            analytics.summary.averageResponseTime = analytics.summary.totalDuration / analytics.summary.totalSessions;
-            analytics.summary.errorRate = 1 - (analytics.summary.successfulSessions / analytics.summary.totalSessions);
+            analytics.summary.averageResponseTime =
+                analytics.summary.totalDuration / analytics.summary.totalSessions;
+            analytics.summary.errorRate =
+                1 - analytics.summary.successfulSessions / analytics.summary.totalSessions;
         }
 
         // Group by provider
         const providerGroups = {};
-        filteredSessions.forEach(session => {
+        filteredSessions.forEach((session) => {
             if (!providerGroups[session.provider]) {
                 providerGroups[session.provider] = [];
             }
@@ -366,7 +375,7 @@ export class AnalyticsTracker {
 
         // Group by operation
         const operationGroups = {};
-        filteredSessions.forEach(session => {
+        filteredSessions.forEach((session) => {
             if (!operationGroups[session.operation]) {
                 operationGroups[session.operation] = [];
             }
@@ -384,14 +393,14 @@ export class AnalyticsTracker {
      * Calculate metrics for a group of sessions
      */
     calculateGroupMetrics(sessions) {
-        const successful = sessions.filter(s => s.success);
+        const successful = sessions.filter((s) => s.success);
         const totalCost = sessions.reduce((sum, s) => sum + s.cost, 0);
         const totalDuration = sessions.reduce((sum, s) => sum + (s.duration || 0), 0);
 
         return {
             sessions: sessions.length,
             successful: successful.length,
-            errorRate: 1 - (successful.length / sessions.length),
+            errorRate: 1 - successful.length / sessions.length,
             totalCost,
             averageCost: totalCost / sessions.length,
             totalDuration,
@@ -416,8 +425,8 @@ export class AnalyticsTracker {
     getPerformanceMetrics(sessions) {
         if (sessions.length === 0) return {};
 
-        const durations = sessions.map(s => s.duration || 0).sort((a, b) => a - b);
-        const costs = sessions.map(s => s.cost).sort((a, b) => a - b);
+        const durations = sessions.map((s) => s.duration || 0).sort((a, b) => a - b);
+        const costs = sessions.map((s) => s.cost).sort((a, b) => a - b);
 
         return {
             responseTime: {
@@ -462,8 +471,8 @@ export class AnalyticsTracker {
                 startTime = new Date(now.getTime() - 24 * 60 * 60 * 1000);
         }
 
-        const analytics = this.getAnalytics({ 
-            timeRange: (now.getTime() - startTime.getTime()) / (60 * 1000) 
+        const analytics = this.getAnalytics({
+            timeRange: (now.getTime() - startTime.getTime()) / (60 * 1000)
         });
 
         return {
@@ -473,10 +482,12 @@ export class AnalyticsTracker {
             totalCost: analytics.summary.totalCost,
             costByProvider: analytics.costBreakdown,
             topProviders: Object.entries(analytics.costByProvider)
-                .sort(([,a], [,b]) => b - a)
+                .sort(([, a], [, b]) => b - a)
                 .slice(0, 5),
             sessions: analytics.summary.totalSessions,
-            estimatedMonthlyCost: analytics.summary.totalCost * (30 * 24 * 60 * 60 * 1000) / (now.getTime() - startTime.getTime())
+            estimatedMonthlyCost:
+                (analytics.summary.totalCost * (30 * 24 * 60 * 60 * 1000)) /
+                (now.getTime() - startTime.getTime())
         };
     }
 
@@ -487,7 +498,7 @@ export class AnalyticsTracker {
         try {
             const data = await fs.readFile(this.analyticsFile, 'utf8');
             const parsed = JSON.parse(data);
-            
+
             // Restore metrics
             if (parsed.metrics) {
                 this.metrics = {
@@ -537,7 +548,8 @@ export class AnalyticsTracker {
     /**
      * Cleanup old data
      */
-    async cleanup(maxAge = 7 * 24 * 60 * 60 * 1000) { // 7 days default
+    async cleanup(maxAge = 7 * 24 * 60 * 60 * 1000) {
+        // 7 days default
         const cutoff = Date.now() - maxAge;
         let removed = 0;
 
@@ -549,7 +561,7 @@ export class AnalyticsTracker {
         }
 
         // Clean up hourly data older than 30 days
-        const hourCutoff = Date.now() - (30 * 24 * 60 * 60 * 1000);
+        const hourCutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
         for (const [hourKey] of this.metrics.requestsByHour) {
             const [dateStr] = hourKey.split('-');
             if (new Date(dateStr).getTime() < hourCutoff) {
